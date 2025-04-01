@@ -1,0 +1,42 @@
+# Terraform state files
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+.terraformrc
+terraform.rc
+
+# SSH keys
+*.pem
+*.key
+id_rsa*
+*.pub
+
+# Generated files
+valheim-key.*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Exclude all .tfvars files, which might contain sensitive data
+*.tfvars
+*.tfvars.json
+
+# Local environment files
+.env
+.envrc
+
+# Lightsail backup files
+*.tar.gz
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~ 

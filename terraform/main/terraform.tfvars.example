@@ -1,0 +1,12 @@
+# Rename this file to terraform.tfvars and update the values
+# Do not commit terraform.tfvars to version control!
+
+# Required values (no defaults)
+valheim_world_name  = "MyWorld"           # Name of your Valheim world
+valheim_server_pass = "SuperSecretPass"   # Server password (min 5 chars)
+
+# Optional values (all have defaults)
+valheim_server_name = "MyValheimServer"   # Display name in the server browser
+instance_name       = "valheim-server"    # Name of the Lightsail instance
+aws_region          = "eu-north-1"        # AWS region (Stockholm)
+instance_bundle_id  = "medium_3_0"        # Lightsail instance size (4GB RAM) 
