@@ -30,6 +30,10 @@ crash.*.log
 # Lightsail backup files
 *.tar.gz
 
+# Valheim world backup files
+*.db
+*.fwl
+
 # OS specific files
 .DS_Store
 Thumbs.db

@@ -39,6 +39,58 @@ A Terraform project for deploying a Valheim game server on AWS Lightsail with ba
    terraform apply
    ```
 
+## Restoring an Existing Valheim World
+
+To restore an existing world to your server:
+
+1. **Find your local world save files**:
+
+   - Windows:
+     - `.db` files: `%USERPROFILE%\AppData\LocalLow\IronGate\Valheim\worlds\`
+     - `.fwl` files: `%USERPROFILE%\AppData\LocalLow\IronGate\Valheim\worlds_local\`
+   - Mac:
+     - `.db` files: `~/Library/Application Support/IronGate/Valheim/worlds/`
+     - `.fwl` files: `~/Library/Application Support/IronGate/Valheim/worlds_local/`
+   - Linux:
+     - `.db` files: `~/.config/unity3d/IronGate/Valheim/worlds/`
+     - `.fwl` files: `~/.config/unity3d/IronGate/Valheim/worlds_local/`
+
+2. **Transfer files to your Lightsail instance**:
+
+   ```bash
+   # Transfer both file types (replace with your actual paths and IP)
+   scp -i valheim-key.pem /path/to/worlds/YourWorld.db ec2-user@your-instance-ip:/tmp/
+   scp -i valheim-key.pem /path/to/worlds_local/YourWorld.fwl ec2-user@your-instance-ip:/tmp/
+   ```
+
+3. **SSH into the instance and move files to the correct locations**:
+
+   ```bash
+   ssh -i valheim-key.pem ec2-user@your-instance-ip
+
+   # Create directory (both files can go in worlds_local)
+   sudo mkdir -p /opt/valheim/data/worlds_local
+
+   # Move files to worlds_local directory
+   sudo mv /tmp/YourWorld.db /opt/valheim/data/worlds_local/
+   sudo mv /tmp/YourWorld.fwl /opt/valheim/data/worlds_local/
+
+   # Set correct ownership
+   sudo chown -R 1000:1000 /opt/valheim/data
+
+   # Restart the server to load the world
+   cd /opt/valheim && docker-compose restart
+   ```
+
+4. **Verify the world loaded correctly**:
+   ```bash
+   cd /opt/valheim && docker-compose logs -f
+   ```
+
+**Note**: While the standard Valheim file structure has `.db` files in `/worlds` and `.fwl` files in `/worlds_local`, the Docker container appears to be flexible and can find both file types in the `/worlds_local` directory.
+
+**Important**: Make sure your `valheim_world_name` in terraform.tfvars matches exactly the name of your world files (without the file extension).
+
 ## SSH Key Management
 
 The deployment automatically generates an SSH key pair for connecting to the Lightsail instance:
@@ -99,6 +151,12 @@ Basic CloudWatch monitoring is set up to track network traffic metrics for the V
   aws lightsail start-instance --instance-name valheim-server
   aws lightsail stop-instance --instance-name valheim-server
   ```
+
+## Server Management
+
+- **View logs**: `ssh -i valheim-key.pem ec2-user@YOUR_IP "cd /opt/valheim && docker-compose logs -f"`
+- **Restart server**: `ssh -i valheim-key.pem ec2-user@YOUR_IP "cd /opt/valheim && docker-compose restart"`
+- **Stop server**: `ssh -i valheim-key.pem ec2-user@YOUR_IP "cd /opt/valheim && docker-compose stop"`
 
 ## Clean Up
 
