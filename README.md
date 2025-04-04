@@ -141,6 +141,45 @@ Adjust the Lightsail instance size by modifying `instance_bundle_id` in your `te
 
 Basic CloudWatch monitoring is set up to track network traffic metrics for the Valheim server.
 
+#### Adding Memory Monitoring (Optional)
+
+You can add memory monitoring to your running server without recreating it:
+
+1. Create access keys for the IAM user (created via Terraform) through AWS console or CLI:
+
+   ```bash
+   # Using AWS CLI to create access keys
+   aws iam create-access-key --user-name valheim-cloudwatch-agent
+
+   # Save the AccessKeyId and SecretAccessKey displayed - you won't be able to retrieve the secret key again
+   ```
+
+2. Find your server's IP address:
+
+   ```bash
+   # From Terraform output
+   terraform output valheim_server_static_ip
+   ```
+
+3. Run the monitoring installation script:
+
+   ```bash
+   # Make sure the script is executable
+   chmod +x scripts/install_monitoring.sh
+
+   # Run it with your server's details and credentials
+   ./scripts/install_monitoring.sh ec2-user@YOUR_SERVER_IP valheim-key.pem ACCESS_KEY SECRET_KEY
+   ```
+
+4. The script will install and configure the CloudWatch agent to collect:
+
+   - `mem_used_percent`: Percentage of memory used
+
+5. View metrics in CloudWatch console:
+   - Go to CloudWatch → Metrics → All metrics
+   - Look for "Valheim" namespace
+   - Create custom dashboards or alarms based on these metrics
+
 ## Usage
 
 - Connect to your Valheim server using the Lightsail instance's public IP address.

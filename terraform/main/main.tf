@@ -36,6 +36,10 @@ resource "aws_lightsail_static_ip" "valheim_static_ip" {
 
 # Attach the static IP to the instance
 resource "aws_lightsail_static_ip_attachment" "valheim_static_ip_attachment" {
+  depends_on = [
+    aws_lightsail_instance.valheim_server,
+    aws_lightsail_static_ip.valheim_static_ip
+  ]
   static_ip_name = aws_lightsail_static_ip.valheim_static_ip.name
   instance_name  = aws_lightsail_instance.valheim_server.name
 }
@@ -44,14 +48,18 @@ resource "aws_lightsail_instance_public_ports" "valheim_ports" {
   instance_name = aws_lightsail_instance.valheim_server.name
 
   port_info {
-    protocol  = "udp"
-    from_port = 2456
-    to_port   = 2458
+    protocol   = "udp"
+    from_port  = 2456
+    to_port    = 2458
+    cidrs      = ["0.0.0.0/0"]
+    ipv6_cidrs = ["::/0"]
   }
 
   port_info {
-    protocol  = "tcp"
-    from_port = 22
-    to_port   = 22
+    protocol   = "tcp"
+    from_port  = 22
+    to_port    = 22
+    cidrs      = ["0.0.0.0/0"]
+    ipv6_cidrs = ["::/0"]
   }
 }
