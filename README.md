@@ -197,6 +197,24 @@ You can add memory monitoring to your running server without recreating it:
 - **Restart server**: `ssh -i valheim-key.pem ec2-user@YOUR_IP "cd /opt/valheim && docker-compose restart"`
 - **Stop server**: `ssh -i valheim-key.pem ec2-user@YOUR_IP "cd /opt/valheim && docker-compose stop"`
 
+## Auto-Start Configuration
+
+To make your Valheim server automatically start whenever the instance boots or restarts:
+
+```bash
+# Make the script executable
+chmod +x scripts/setup_autostart.sh
+
+# Run it with your server's details
+./scripts/setup_autostart.sh ec2-user@YOUR_SERVER_IP valheim-key.pem
+```
+
+This creates a systemd service that will:
+
+- Start automatically when the instance boots
+- Gracefully shut down when the instance stops
+- Restart the server after crashes
+
 ## Clean Up
 
 To remove all resources:
