@@ -1,8 +1,5 @@
 # Discord Bot - Creates Lambda and API Gateway resources for controlling the Valheim server via Discord
 
-# Get AWS account ID
-data "aws_caller_identity" "current" {}
-
 # IAM role for Lambda function
 resource "aws_iam_role" "discord_lambda_role" {
   name = "valheim_discord_bot_lambda_role"
@@ -46,7 +43,7 @@ resource "aws_iam_policy" "discord_lambda_policy" {
           "lightsail:StopInstance"
         ]
         Effect   = "Allow"
-        Resource = "arn:aws:lightsail:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"
+        Resource = "arn:aws:lightsail:${var.aws_region}:*:*"
       }
     ]
   })
@@ -63,7 +60,7 @@ resource "aws_lambda_function" "discord_bot" {
   function_name = "valheim_discord_bot"
   role          = aws_iam_role.discord_lambda_role.arn
   handler       = "src/index.handler"
-  runtime       = "nodejs16.x"
+  runtime       = "nodejs20.x"
   timeout       = 10
 
   # Upload the ZIP package
