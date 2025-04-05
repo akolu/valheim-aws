@@ -217,9 +217,43 @@ This creates a systemd service that will:
 
 ## Instance State Alerts
 
-CloudWatch Event Rules are configured to track when your Valheim server instance starts or stops. These events appear in CloudWatch and can be used for logging and monitoring purposes.
+CloudWatch Event Rules are configured to track when your Valheim server instance starts or stops. These events are captured and can be used for logging and monitoring purposes.
 
 The alert rules can be found in the CloudWatch console under "Rules" and could be used as triggers for custom actions in the future.
+
+## Prerequisites
+
+### CloudTrail
+
+The instance state alerts rely on CloudTrail to capture API activity. CloudTrail should be enabled in your AWS account to make these alerts work.
+
+> **Note:** CloudTrail is an account-wide service and only needs to be set up once per AWS account, not per project.
+
+If you don't have CloudTrail enabled yet, you can set it up through the AWS console:
+
+1. Go to the CloudTrail console
+2. Click "Create trail"
+3. Name your trail (e.g., "management-events")
+4. Select "Create new S3 bucket" (or use an existing one)
+5. Enable for all regions
+6. Choose "Management events" at minimum
+7. Click "Next" and "Create trail"
+
+Alternatively, you can enable it via the AWS CLI:
+
+```bash
+# Create a bucket for CloudTrail logs
+aws s3api create-bucket --bucket cloudtrail-logs-ACCOUNT_ID --region YOUR_REGION --create-bucket-configuration LocationConstraint=YOUR_REGION
+
+# Add a bucket policy for CloudTrail
+aws s3api put-bucket-policy --bucket cloudtrail-logs-ACCOUNT_ID --policy file://bucket-policy.json
+
+# Create and start the trail
+aws cloudtrail create-trail --name management-events --s3-bucket-name cloudtrail-logs-ACCOUNT_ID --is-multi-region-trail --enable-log-file-validation
+aws cloudtrail start-logging --name management-events
+```
+
+Once CloudTrail is enabled, the EventBridge rules will automatically start capturing Valheim server state changes.
 
 ## Clean Up
 
