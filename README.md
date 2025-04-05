@@ -215,10 +215,16 @@ This creates a systemd service that will:
 - Gracefully shut down when the instance stops
 - Restart the server after crashes
 
+## Instance State Alerts
+
+CloudWatch Event Rules are configured to track when your Valheim server instance starts or stops. These events appear in CloudWatch and can be used for logging and monitoring purposes.
+
+The alert rules can be found in the CloudWatch console under "Rules" and could be used as triggers for custom actions in the future.
+
 ## Clean Up
 
 To remove all resources:
 
 ```
-terraform destroy
+
 ```

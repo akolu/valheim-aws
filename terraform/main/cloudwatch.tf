@@ -13,3 +13,39 @@ resource "aws_cloudwatch_metric_alarm" "network_idle_alarm" {
     InstanceName = aws_lightsail_instance.valheim_server.name
   }
 }
+
+# EventBridge rule for instance start events
+resource "aws_cloudwatch_event_rule" "instance_started" {
+  name        = "${var.instance_name}-started-alert"
+  description = "Captures when the Valheim server starts"
+
+  event_pattern = jsonencode({
+    source      = ["aws.lightsail"]
+    detail-type = ["AWS API Call via CloudTrail"]
+    detail = {
+      eventSource = ["lightsail.amazonaws.com"]
+      eventName   = ["StartInstance"]
+      requestParameters = {
+        instanceName = [var.instance_name]
+      }
+    }
+  })
+}
+
+# EventBridge rule for instance stop events
+resource "aws_cloudwatch_event_rule" "instance_stopped" {
+  name        = "${var.instance_name}-stopped-alert"
+  description = "Captures when the Valheim server stops"
+
+  event_pattern = jsonencode({
+    source      = ["aws.lightsail"]
+    detail-type = ["AWS API Call via CloudTrail"]
+    detail = {
+      eventSource = ["lightsail.amazonaws.com"]
+      eventName   = ["StopInstance"]
+      requestParameters = {
+        instanceName = [var.instance_name]
+      }
+    }
+  })
+}
