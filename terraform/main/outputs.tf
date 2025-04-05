@@ -17,3 +17,8 @@ output "ssh_private_key_path" {
   description = "Path to the SSH private key file"
   value       = "${var.lightsail_ssh_key_name}.pem has been created in your current directory"
 }
+
+output "discord_bot_url" {
+  description = "The URL to use for Discord interactions endpoint"
+  value       = aws_apigatewayv2_api.discord_api_gateway.api_endpoint
+}

@@ -215,6 +215,21 @@ This creates a systemd service that will:
 - Gracefully shut down when the instance stops
 - Restart the server after crashes
 
+## Discord Bot Integration
+
+A serverless Discord bot is provided that allows your play group to control the Valheim server directly from Discord with slash commands. It's implemented using AWS Lambda and API Gateway for virtually no cost.
+
+### Bot Features
+
+- `/valheim_status` - Check if the server is running or stopped
+- `/valheim_start` - Start the server (authorized users only)
+- `/valheim_stop` - Stop the server (authorized users only)
+- `/valheim_help` - Show available commands
+
+### Setup Instructions
+
+See the [Discord Bot README](discord_bot/README.md) for detailed setup and deployment instructions.
+
 ## Instance State Alerts
 
 CloudWatch Event Rules are configured to track when your Valheim server instance starts or stops. These events are captured and can be used for logging and monitoring purposes.

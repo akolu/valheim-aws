@@ -1,0 +1,22 @@
+{
+  "name": "valheim-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for controlling a Valheim server on AWS Lightsail",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"No tests configured\"",
+    "build": "npm install --omit=dev && zip -r valheim_discord_bot.zip node_modules src/index.js",
+    "register-commands": "npm install && node register-commands.js",
+    "register-commands:global": "npm install && node register-commands.js --global"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "aws-sdk": "^2.1354.0",
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.5"
+  }
+}

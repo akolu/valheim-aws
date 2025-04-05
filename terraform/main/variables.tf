@@ -51,3 +51,41 @@ variable "valheim_server_pass" {
   type        = string
   sensitive   = true
 }
+
+# Discord Bot Configuration
+variable "discord_bot_zip_path" {
+  description = "Path to the Discord bot Lambda ZIP package"
+  type        = string
+  default     = "../../discord_bot/valheim_discord_bot.zip"
+}
+
+variable "discord_authorized_users" {
+  description = "List of Discord user IDs authorized to control the server"
+  type        = list(string)
+  default     = []
+}
+
+variable "discord_authorized_roles" {
+  description = "List of Discord role names authorized to control the server"
+  type        = list(string)
+  default     = ["Admin"]
+}
+
+variable "discord_public_key" {
+  description = "Discord application public key"
+  type        = string
+  default     = ""
+}
+
+variable "discord_application_id" {
+  description = "Discord application ID"
+  type        = string
+  default     = ""
+}
+
+variable "discord_bot_token" {
+  description = "Discord bot token"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
