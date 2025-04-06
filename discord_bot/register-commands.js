@@ -6,6 +6,9 @@
  * Usage:
  *   npm run register-commands
  *   npm run register-commands:global
+ * 
+ * When using --global flag, this will automatically delete any guild-specific commands
+ * since they would be duplicates of the global commands.
  */
 
 // Load environment variables from .env file
@@ -57,6 +60,22 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
 // Register the commands
 (async () => {
   try {
+    // If registering global commands and GUILD_ID is available, delete guild commands first
+    if (isGlobal && DISCORD_GUILD_ID) {
+      console.log(`Registering global commands, clearing guild commands from ${DISCORD_GUILD_ID} to avoid duplicates...`);
+      
+      try {
+        await rest.put(
+          Routes.applicationGuildCommands(DISCORD_APP_ID, DISCORD_GUILD_ID),
+          { body: [] }
+        );
+        console.log('✓ Guild commands cleared successfully');
+      } catch (guildError) {
+        console.warn('⚠️ Failed to clear guild commands:', guildError.message);
+        console.warn('You may need to manually delete guild commands if they exist');
+      }
+    }
+    
     console.log(`Registering ${commands.length} slash commands...`);
     
     // Route depends on whether we're registering global or guild commands
