@@ -61,7 +61,8 @@ resource "aws_lambda_function" "discord_bot" {
   role          = aws_iam_role.discord_lambda_role.arn
   handler       = "src/index.handler"
   runtime       = "nodejs20.x"
-  timeout       = 10
+  timeout       = 15
+  memory_size   = 512
 
   # Upload the ZIP package
   filename         = var.discord_bot_zip_path
