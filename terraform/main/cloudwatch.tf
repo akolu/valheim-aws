@@ -53,3 +53,21 @@ resource "aws_cloudwatch_event_target" "instance_stopped_logs" {
   target_id = "SendToCloudWatchLogs"
   arn       = aws_cloudwatch_log_group.instance_state_logs.arn
 }
+
+resource "aws_cloudwatch_metric_alarm" "network_idle_alarm" {
+  alarm_name          = "valheim-network-idle-alarm"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = var.idle_shutdown_minutes / 5 # Number of 5-minute periods
+  metric_name         = "net_bytes_recv"
+  namespace           = "CWAgent"
+  period              = 300 # 5 minutes
+  statistic           = "Sum"
+  threshold           = 1000000 # 1 MB per 5 minutes
+  alarm_description   = "This alarm monitors Valheim server player activity (inbound traffic)"
+
+  dimensions = {
+    interface   = "ens5",
+    server_name = var.instance_name
+  }
+}
+

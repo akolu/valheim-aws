@@ -25,13 +25,27 @@ cat > /tmp/cloudwatch-agent-config.json << EOF
     "metrics": {
         "append_dimensions": {
             "ImageID": "\${aws:ImageId}",
-            "InstanceId": "\${aws:InstanceId}",
             "InstanceType": "\${aws:InstanceType}"
         },
         "metrics_collected": {
             "mem": {
+                "append_dimensions": {
+                    "server_name": "$INSTANCE_NAME"
+                },
                 "measurement": [
                     "mem_used_percent"
+                ],
+                "metrics_collection_interval": 60
+            },
+            "net": {
+                "append_dimensions": {
+                    "server_name": "$INSTANCE_NAME"
+                },
+                "resources": [
+                    "ens5"
+                ],
+                "measurement": [
+                    "bytes_recv"
                 ],
                 "metrics_collection_interval": 60
             }
@@ -47,8 +61,7 @@ echo "Copying config file to server..."
 scp -i "$KEY_FILE" /tmp/cloudwatch-agent-config.json "$SERVER":/tmp/
 
 echo "Configuring CloudWatch agent on the server..."
-ssh -i "$KEY_FILE" "$SERVER" "sudo mkdir -p /opt/aws/amazon-cloudwatch-agent/etc"
-ssh -i "$KEY_FILE" "$SERVER" "sudo mv /tmp/cloudwatch-agent-config.json /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json"
+ssh -i "$KEY_FILE" "$SERVER" "sudo mv /tmp/cloudwatch-agent-config.json /opt/aws/amazon-cloudwatch-agent/bin/config.json"
 
 echo "Adding shared credentials profile to common-config.toml..."
 ssh -i "$KEY_FILE" "$SERVER" "sudo bash -c 'cat >> /opt/aws/amazon-cloudwatch-agent/etc/common-config.toml' << EOF
