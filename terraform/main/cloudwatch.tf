@@ -4,14 +4,31 @@ resource "aws_cloudwatch_log_group" "instance_state_logs" {
   retention_in_days = 14
 }
 
-# Create the Lambda ZIP package with bootstrap script
+# Create the Lambda ZIP package with Python script
 data "archive_file" "lambda_zip" {
   type        = "zip"
   output_path = "${path.module}/stop_instance_lambda.zip"
 
   source {
-    content  = "#!/bin/sh\naws lightsail stop-instance --instance-name \"${var.instance_name}\" --region \"${var.aws_region}\""
-    filename = "bootstrap"
+    content  = <<-EOT
+    import boto3
+    import logging
+
+    # Set up logging
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    def handler(event, context):
+        try:
+            logger.info("Stopping Valheim server due to inactivity")
+            lightsail = boto3.client('lightsail', region_name='${var.aws_region}')
+            lightsail.stop_instance(instanceName='${var.instance_name}')
+            return {'statusCode': 200}
+        except Exception as e:
+            logger.error(f"Error: {e}")
+            raise
+    EOT
+    filename = "lambda_function.py"
   }
 }
 
@@ -25,8 +42,9 @@ resource "aws_cloudwatch_log_group" "stop_lambda_logs" {
 resource "aws_lambda_function" "stop_lightsail_instance" {
   function_name = "stop-valheim-server"
   role          = aws_iam_role.stop_instance_lambda_role.arn
-  runtime       = "provided.al2"
-  handler       = "bootstrap"
+  # Using Python runtime which has boto3 pre-installed
+  runtime       = "python3.12"
+  handler       = "lambda_function.handler"
   timeout       = 30
   architectures = ["arm64"]
 
