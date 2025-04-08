@@ -74,12 +74,13 @@ resource "aws_iam_role_policy" "stop_instance_lambda_policy" {
   })
 }
 
-# Permission for CloudWatch to invoke the Lambda
+# Permission for CloudWatch Alarms to invoke the Lambda
 resource "aws_lambda_permission" "allow_cloudwatch" {
   statement_id  = "AllowExecutionFromCloudWatch"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.stop_lightsail_instance.function_name
-  principal     = "events.amazonaws.com"
+  principal     = "lambda.alarms.cloudwatch.amazonaws.com"
+  source_arn    = aws_cloudwatch_metric_alarm.network_idle_alarm.arn
 }
 
 # EventBridge rule for instance start events
