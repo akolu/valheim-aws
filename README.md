@@ -1,6 +1,15 @@
-# Valheim Server on AWS Lightsail
+# Valheim Server on AWS
 
-A Terraform project for deploying a Valheim game server on AWS Lightsail with basic monitoring.
+A Terraform project for deploying a Valheim game server on AWS with basic monitoring.
+
+## Deployment Options
+
+This repository provides two deployment options:
+
+1. **AWS Lightsail** (Original): Simpler setup with predictable monthly costs
+2. **EC2 Spot Instance** (New): More cost-effective but with potential interruptions
+
+Choose the option that best suits your needs.
 
 ## Prerequisites
 
@@ -276,4 +285,36 @@ To remove all resources:
 
 ```
 
+## EC2 Spot Instance Deployment (New)
+
+For a more cost-effective deployment using EC2 spot instances:
+
+1. Navigate to the Valheim server directory:
+
+```
+
+cd terraform/valheim-server
+
+```
+
+2. Create a `terraform.tfvars` file:
+
+```
+
+cp terraform.tfvars.example terraform.tfvars
+
+```
+
+3. Edit `terraform.tfvars` to set your configuration values
+
+4. Initialize and apply the Terraform configuration:
+
+```
+
+terraform init
+terraform apply
+
+```
+
+For more details, see the [Valheim Server README](terraform/valheim-server/README.md).
 ```

@@ -1,0 +1,31 @@
+# AWS Region
+aws_region = "eu-north-1"
+
+# Server Configuration
+instance_name       = "my-valheim-server"
+instance_type       = "t3.medium"
+valheim_world_name  = "MyWorld"
+valheim_server_name = "My Valheim Server"
+valheim_server_pass = "secretpassword"
+
+# SSH Configuration
+ssh_key_name = "valheim-key"
+# Leave public_key empty to generate a new key
+public_key   = ""
+
+# Backup Configuration is now simplified
+# S3 bucket name is automatically generated based on instance_name
+
+# Discord Bot Configuration (Optional)
+enable_discord_bot     = false
+discord_public_key     = ""
+discord_application_id = ""
+discord_bot_token      = ""
+discord_authorized_users = [
+  "your_discord_id" # Your Discord User ID
+]
+discord_authorized_roles = ["Admin"]
+discord_bot_zip_path     = "../../discord_bot/valheim_discord_bot.zip"
+
+# Security settings
+allowed_ssh_cidr_blocks = ["0.0.0.0/0"]   # For better security, restrict to your IP

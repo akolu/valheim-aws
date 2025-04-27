@@ -30,17 +30,27 @@ const createJSONResponse = (statusCode, body) => {
   };
 };
 
-// Lightsail operations
-const lightsail = new AWS.Lightsail({ region: process.env.AWS_REGION || 'eu-north-1' });
+// EC2 operations
+const ec2 = new AWS.EC2({ region: process.env.AWS_REGION || 'eu-north-1' });
 
 const getInstanceState = async () => {
   const params = {
-    instanceName: process.env.INSTANCE_NAME || 'valheim-server',
+    InstanceIds: [process.env.INSTANCE_ID]
   };
   
   try {
-    const response = await lightsail.getInstanceState(params).promise();
-    return response.state.name;
+    const response = await ec2.describeInstances(params).promise();
+    if (response.Reservations.length > 0 && 
+        response.Reservations[0].Instances.length > 0) {
+      const instance = response.Reservations[0].Instances[0];
+      return {
+        state: instance.State.Name,
+        publicIp: instance.PublicIpAddress || 'N/A',
+        instanceType: instance.InstanceType,
+        launchTime: instance.LaunchTime
+      };
+    }
+    return { state: 'not_found' };
   } catch (error) {
     console.error('Error getting instance state:', error);
     throw error;
@@ -49,11 +59,11 @@ const getInstanceState = async () => {
 
 const startInstance = async () => {
   const params = {
-    instanceName: process.env.INSTANCE_NAME || 'valheim-server',
+    InstanceIds: [process.env.INSTANCE_ID]
   };
   
   try {
-    await lightsail.startInstance(params).promise();
+    await ec2.startInstances(params).promise();
     return 'Server is starting...';
   } catch (error) {
     console.error('Error starting instance:', error);
@@ -63,11 +73,11 @@ const startInstance = async () => {
 
 const stopInstance = async () => {
   const params = {
-    instanceName: process.env.INSTANCE_NAME || 'valheim-server',
+    InstanceIds: [process.env.INSTANCE_ID]
   };
   
   try {
-    await lightsail.stopInstance(params).promise();
+    await ec2.stopInstances(params).promise();
     return 'Server is stopping...';
   } catch (error) {
     console.error('Error stopping instance:', error);
@@ -78,11 +88,26 @@ const stopInstance = async () => {
 // Command handlers
 const handleStatusCommand = async () => {
   try {
-    const state = await getInstanceState();
+    const instanceInfo = await getInstanceState();
+    
+    let statusMessage = '';
+    if (instanceInfo.state === 'not_found') {
+      statusMessage = 'Server instance not found. Please check your configuration.';
+    } else {
+      statusMessage = `Server is currently **${instanceInfo.state}**\n`;
+      
+      if (instanceInfo.state === 'running') {
+        const uptime = Math.round((new Date() - new Date(instanceInfo.launchTime)) / (60 * 1000));
+        statusMessage += `🖥️ **IP Address**: ${instanceInfo.publicIp}\n`;
+        statusMessage += `⚙️ **Instance Type**: ${instanceInfo.instanceType}\n`;
+        statusMessage += `⏱️ **Uptime**: ${uptime} minutes`;
+      }
+    }
+    
     return {
       type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
       data: {
-        content: `Server is currently **${state}**`,
+        content: statusMessage,
         flags: 64 // Ephemeral flag - makes the message only visible to the caller
       }
     };
@@ -110,6 +135,20 @@ const handleStartCommand = async (userId) => {
   }
   
   try {
+    // Check if instance exists and its state
+    const instanceInfo = await getInstanceState();
+    
+    // If instance is already running
+    if (instanceInfo.state === 'running') {
+      return {
+        type: 4,
+        data: {
+          content: `Server is already running.\n🖥️ **IP Address**: ${instanceInfo.publicIp}`
+        }
+      };
+    }
+    
+    // If instance exists but stopped, start it
     await startInstance();
     return {
       type: 4,
