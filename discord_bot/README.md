@@ -1,10 +1,10 @@
 # Valheim Discord Bot
 
-A Discord bot for controlling a Valheim server on AWS Lightsail.
+A Discord bot for controlling a Valheim server on AWS EC2 spot instance.
 
 ## Overview
 
-This Discord bot allows your play group to control a Valheim server running on AWS Lightsail using slash commands. The bot is implemented as an AWS Lambda function that communicates with Discord via API Gateway.
+This Discord bot allows your play group to control a Valheim server running on AWS EC2 using slash commands. The bot is implemented as an AWS Lambda function that communicates with Discord via API Gateway.
 
 ## Features
 
@@ -16,7 +16,7 @@ This Discord bot allows your play group to control a Valheim server running on A
 ## Prerequisites
 
 - Node.js 16 or later
-- AWS account with Lambda, API Gateway, and Lightsail permissions
+- AWS account with Lambda, API Gateway, and EC2 permissions
 - Discord bot token and application ID
 
 ## Setup
@@ -29,6 +29,7 @@ This Discord bot allows your play group to control a Valheim server running on A
    - Copy the bot token (keep it secret)
    - Under "OAuth2 > URL Generator", select the `bot` and `applications.commands` scopes
    - Invite the bot to your server using the generated URL
+   - **IMPORTANT**: Add interactions endpoint url to match your ApiGW URL (available only after terraform apply - this is the one that connects Discord application to ApiGW and Lambda)
 
 2. **Set Up Environment Variables**:
 
@@ -38,12 +39,13 @@ This Discord bot allows your play group to control a Valheim server running on A
    cp .env.example .env
    ```
 
-   - Edit `.env` and fill in your Discord credentials:
+   - Edit `.env` and fill in your Discord credentials and AWS configuration:
      - `DISCORD_BOT_TOKEN` - Your bot's token
      - `DISCORD_APP_ID` - Your application ID (NOT the bot user ID)
      - `DISCORD_GUILD_ID` - (Optional) Server ID for testing
      - `DISCORD_PUBLIC_KEY` - Public key for signature verification
      - `AUTHORIZED_USERS` - (Optional) Comma-separated Discord user IDs allowed to start/stop the server
+     - `INSTANCE_ID` - Your EC2 instance ID (e.g., i-0123456789abcdef0) - **Required**
 
 3. **Register Discord Slash Commands**:
 

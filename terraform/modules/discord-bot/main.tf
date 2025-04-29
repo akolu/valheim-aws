@@ -1,8 +1,8 @@
-# Discord Bot - Creates Lambda and API Gateway resources for controlling the Valheim server via Discord
+# Discord Bot - Creates Lambda and API Gateway resources for controlling an EC2 instance via Discord
 
 # IAM role for Lambda function
 resource "aws_iam_role" "discord_lambda_role" {
-  name = "valheim_discord_bot_lambda_role"
+  name = "${var.prefix}_discord_bot_lambda_role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -16,11 +16,15 @@ resource "aws_iam_role" "discord_lambda_role" {
       }
     ]
   })
+
+  tags = {
+    Name = "${var.prefix}_discord_bot_lambda_role"
+  }
 }
 
 # IAM policy for Lambda function
 resource "aws_iam_policy" "discord_lambda_policy" {
-  name        = "valheim_discord_bot_lambda_policy"
+  name        = "${var.prefix}_discord_bot_lambda_policy"
   description = "IAM policy for Valheim Discord bot Lambda function"
 
   policy = jsonencode({
@@ -37,13 +41,13 @@ resource "aws_iam_policy" "discord_lambda_policy" {
       },
       {
         Action = [
-          "lightsail:GetInstance",
-          "lightsail:GetInstanceState",
-          "lightsail:StartInstance",
-          "lightsail:StopInstance"
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceStatus",
+          "ec2:StartInstances",
+          "ec2:StopInstances"
         ]
         Effect   = "Allow"
-        Resource = "arn:aws:lightsail:${var.aws_region}:*:*"
+        Resource = "*"
       }
     ]
   })
@@ -57,14 +61,14 @@ resource "aws_iam_role_policy_attachment" "discord_lambda_policy_attachment" {
 
 # Lambda function for Discord bot
 resource "aws_lambda_function" "discord_bot" {
-  function_name = "valheim_discord_bot"
+  function_name = "${var.prefix}_discord_bot"
   role          = aws_iam_role.discord_lambda_role.arn
   handler       = "src/index.handler"
   runtime       = "nodejs20.x"
   timeout       = 15
-  memory_size   = 512
+  memory_size   = 256
 
-  # Upload the ZIP package
+  # Upload the ZIP package - using the determined path
   filename         = var.discord_bot_zip_path
   source_code_hash = filebase64sha256(var.discord_bot_zip_path)
 
@@ -80,8 +84,12 @@ resource "aws_lambda_function" "discord_bot" {
       AUTHORIZED_ROLES = join(",", var.discord_authorized_roles)
 
       # Server configuration
-      INSTANCE_NAME = var.instance_name
+      INSTANCE_ID = var.instance_id
     }
+  }
+
+  tags = {
+    Name = "${var.prefix}_discord_bot"
   }
 }
 
@@ -89,13 +97,21 @@ resource "aws_lambda_function" "discord_bot" {
 resource "aws_cloudwatch_log_group" "discord_lambda_logs" {
   name              = "/aws/lambda/${aws_lambda_function.discord_bot.function_name}"
   retention_in_days = 14
+
+  tags = {
+    Name = "${var.prefix}_discord_bot_logs"
+  }
 }
 
 # API Gateway
 resource "aws_apigatewayv2_api" "discord_api_gateway" {
-  name          = "valheim-discord-bot-api"
+  name          = "${var.prefix}-discord-bot-api"
   protocol_type = "HTTP"
   description   = "API Gateway for Valheim Discord bot"
+
+  tags = {
+    Name = "${var.prefix}-discord-bot-api"
+  }
 }
 
 # API Gateway stage

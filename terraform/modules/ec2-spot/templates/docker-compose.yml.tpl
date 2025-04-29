@@ -1,8 +1,8 @@
-version: "3"
+version: '3'
 services:
   valheim:
-    image: lloesche/valheim-server
-    container_name: valheim-server
+    image: lloesche/valheim-server:latest
+    container_name: valheim
     restart: always
     ports:
       - "2456-2458:2456-2458/udp"
@@ -15,7 +15,7 @@ services:
       - AUTO_UPDATE=1
       - AUTO_BACKUP=1
     cap_add:
-      - SYS_NICE
+      - SYS_NICE      
     volumes:
       - /opt/valheim/data:/config
-      - /opt/valheim/data:/opt/valheim 
+      - /opt/valheim/data:/opt/valheim
