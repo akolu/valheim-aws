@@ -28,7 +28,7 @@ crash.*.log
 .env
 .envrc
 
-# Lightsail backup files
+# Backup files
 *.tar.gz
 
 # Valheim world backup files

@@ -2,12 +2,6 @@
 
 This is a Terraform module for deploying a Valheim game server on an AWS EC2 spot instance.
 
-## Benefits over Lightsail
-
-- Cost savings: EC2 spot instances can be 50-90% cheaper than on-demand instances
-- More flexibility in instance types
-- Better performance options when needed
-
 ## Prerequisites
 
 - AWS CLI configured with appropriate credentials

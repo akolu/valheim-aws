@@ -11,9 +11,12 @@ provider "aws" {
   }
 }
 
-# Simple S3 bucket for backups with deterministic name
-resource "aws_s3_bucket" "backups" {
-  bucket = "${var.instance_name}-backups-${var.aws_region}"
+# S3 bucket for backups
+module "backups" {
+  source = "../modules/s3-backup"
+
+  bucket_name                       = "${var.instance_name}-backups-${var.aws_region}"
+  noncurrent_version_retention_days = 7
 
   tags = {
     Name = "${var.instance_name}-backup-bucket"
@@ -30,7 +33,7 @@ module "valheim_server" {
   valheim_server_pass = var.valheim_server_pass
   aws_region          = var.aws_region
   instance_type       = var.instance_type
-  backup_s3_bucket    = aws_s3_bucket.backups.bucket
+  backup_s3_bucket    = module.backups.bucket_name
 
   # If you have your own SSH key pair
   ssh_key_name = var.ssh_key_name
