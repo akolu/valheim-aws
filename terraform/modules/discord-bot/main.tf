@@ -42,12 +42,18 @@ resource "aws_iam_policy" "discord_lambda_policy" {
       {
         Action = [
           "ec2:DescribeInstances",
-          "ec2:DescribeInstanceStatus",
+          "ec2:DescribeInstanceStatus"
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      },
+      {
+        Action = [
           "ec2:StartInstances",
           "ec2:StopInstances"
         ]
         Effect   = "Allow"
-        Resource = "*"
+        Resource = "arn:aws:ec2:*:*:instance/${var.instance_id}"
       }
     ]
   })
