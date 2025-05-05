@@ -38,6 +38,7 @@ module "valheim_server" {
   # If you have your own SSH key pair
   ssh_key_name = var.ssh_key_name
   public_key   = var.public_key
+  enable_eip   = var.enable_eip
 }
 
 # Optional Discord bot module - comment out if not needed

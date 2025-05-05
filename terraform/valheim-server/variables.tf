@@ -101,3 +101,9 @@ variable "discord_bot_dir" {
   type        = string
   default     = "../../discord_bot"
 }
+
+variable "enable_eip" {
+  description = "Whether to allocate and associate an Elastic IP for the instance."
+  type        = bool
+  default     = true
+}

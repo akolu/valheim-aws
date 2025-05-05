@@ -10,7 +10,7 @@ output "spot_request_id" {
 
 output "public_ip" {
   description = "Public IP address of the Valheim server"
-  value       = aws_eip.valheim_eip.public_ip
+  value       = var.enable_eip ? aws_eip.valheim_eip[0].public_ip : aws_spot_instance_request.valheim_server.public_ip
 }
 
 output "private_key_pem" {
