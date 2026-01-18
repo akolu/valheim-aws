@@ -17,7 +17,7 @@ locals {
 
     ports = {
       udp = [7777]
-      tcp = [7777]
+      tcp = [7777, 8888]
     }
 
     env_vars = {
