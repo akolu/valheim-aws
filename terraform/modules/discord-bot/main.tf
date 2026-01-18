@@ -17,9 +17,9 @@ resource "aws_iam_role" "discord_lambda_role" {
     ]
   })
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.prefix}_discord_bot_lambda_role"
-  }
+  })
 }
 
 # IAM policy for Lambda function
@@ -91,12 +91,13 @@ resource "aws_lambda_function" "discord_bot" {
 
       # Server configuration
       INSTANCE_ID = var.instance_id
+      GAME_NAME   = var.game_name
     }
   }
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.prefix}_discord_bot"
-  }
+  })
 }
 
 # CloudWatch log group for Lambda
@@ -104,9 +105,9 @@ resource "aws_cloudwatch_log_group" "discord_lambda_logs" {
   name              = "/aws/lambda/${aws_lambda_function.discord_bot.function_name}"
   retention_in_days = 14
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.prefix}_discord_bot_logs"
-  }
+  })
 }
 
 # API Gateway
@@ -115,9 +116,9 @@ resource "aws_apigatewayv2_api" "discord_api_gateway" {
   protocol_type = "HTTP"
   description   = "API Gateway for Valheim Discord bot"
 
-  tags = {
+  tags = merge(var.tags, {
     Name = "${var.prefix}-discord-bot-api"
-  }
+  })
 }
 
 # API Gateway stage
