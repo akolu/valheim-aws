@@ -19,6 +19,9 @@ const { REST, Routes } = require('discord.js');
 // Get command line arguments
 const isGlobal = process.argv.includes('--global');
 
+// Get game name from environment (must be after dotenv.config())
+const gameName = process.env.GAME_NAME || 'valheim';
+
 // Check for required environment variables
 const { DISCORD_BOT_TOKEN, DISCORD_APP_ID, DISCORD_GUILD_ID } = process.env;
 
@@ -37,21 +40,38 @@ if (!isGlobal && !DISCORD_GUILD_ID) {
 // Define slash commands
 const commands = [
   {
-    name: 'valheim_status',
-    description: 'Check if the Valheim server is running'
+    name: 'server',
+    description: 'Control game servers',
+    options: [
+      {
+        name: gameName,
+        description: `Control the ${gameName} server`,
+        type: 2, // SUB_COMMAND_GROUP
+        options: [
+          {
+            name: 'status',
+            description: `Check if the ${gameName} server is running`,
+            type: 1, // SUB_COMMAND
+          },
+          {
+            name: 'start',
+            description: `Start the ${gameName} server`,
+            type: 1,
+          },
+          {
+            name: 'stop',
+            description: `Stop the ${gameName} server`,
+            type: 1,
+          },
+          {
+            name: 'help',
+            description: `Show available commands for the ${gameName} server`,
+            type: 1,
+          },
+        ],
+      },
+    ],
   },
-  {
-    name: 'valheim_start',
-    description: 'Start the Valheim server'
-  },
-  {
-    name: 'valheim_stop',
-    description: 'Stop the Valheim server'
-  },
-  {
-    name: 'valheim_help',
-    description: 'Show available commands for the Valheim server'
-  }
 ];
 
 // Initialize Discord REST API client
