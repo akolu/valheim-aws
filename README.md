@@ -170,10 +170,14 @@ A serverless Discord bot is provided that allows your play group to control the 
 
 ### Bot Commands
 
-- `/server valheim status` - Check if the server is running or stopped
-- `/server valheim start` - Start the server (authorized users only)
-- `/server valheim stop` - Stop the server (authorized users only)
-- `/server valheim help` - Show available commands
+Commands use the format `/<game> <action>`:
+
+- `/<game> status` - Check if the server is running or stopped
+- `/<game> start` - Start the server (authorized users only)
+- `/<game> stop` - Stop the server (authorized users only)
+- `/<game> help` - Show available commands
+
+For example: `/valheim start`, `/satisfactory status`
 
 ### Setup Instructions
 

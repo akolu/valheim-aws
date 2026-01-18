@@ -19,8 +19,13 @@ const { REST, Routes } = require('discord.js');
 // Get command line arguments
 const isGlobal = process.argv.includes('--global');
 
-// Get game name from environment (must be after dotenv.config())
-const gameName = process.env.GAME_NAME || 'valheim';
+// Get game name from environment (required, must be after dotenv.config())
+const gameName = process.env.GAME_NAME;
+if (!gameName) {
+  console.error('Error: GAME_NAME environment variable is required');
+  console.error('Set GAME_NAME in your .env file (e.g., GAME_NAME=valheim)');
+  process.exit(1);
+}
 
 // Check for required environment variables
 const { DISCORD_BOT_TOKEN, DISCORD_APP_ID, DISCORD_GUILD_ID } = process.env;
@@ -37,38 +42,31 @@ if (!isGlobal && !DISCORD_GUILD_ID) {
   process.exit(1);
 }
 
-// Define slash commands
+// Define slash commands - /<game> <action> (e.g., /valheim start, /satisfactory status)
 const commands = [
   {
-    name: 'server',
-    description: 'Control game servers',
+    name: gameName,
+    description: `Control the ${gameName} server`,
     options: [
       {
-        name: gameName,
-        description: `Control the ${gameName} server`,
-        type: 2, // SUB_COMMAND_GROUP
-        options: [
-          {
-            name: 'status',
-            description: `Check if the ${gameName} server is running`,
-            type: 1, // SUB_COMMAND
-          },
-          {
-            name: 'start',
-            description: `Start the ${gameName} server`,
-            type: 1,
-          },
-          {
-            name: 'stop',
-            description: `Stop the ${gameName} server`,
-            type: 1,
-          },
-          {
-            name: 'help',
-            description: `Show available commands for the ${gameName} server`,
-            type: 1,
-          },
-        ],
+        name: 'status',
+        description: `Check if the ${gameName} server is running`,
+        type: 1, // SUB_COMMAND
+      },
+      {
+        name: 'start',
+        description: `Start the ${gameName} server`,
+        type: 1,
+      },
+      {
+        name: 'stop',
+        description: `Stop the ${gameName} server`,
+        type: 1,
+      },
+      {
+        name: 'help',
+        description: `Show available commands for the ${gameName} server`,
+        type: 1,
       },
     ],
   },

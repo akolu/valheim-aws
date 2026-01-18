@@ -1,17 +1,21 @@
-# Valheim Discord Bot
+# Bonfire Discord Bot
 
-A Discord bot for controlling a Valheim server on AWS EC2 spot instance.
+A Discord bot for controlling game servers on AWS EC2 spot instances.
 
 ## Overview
 
-This Discord bot allows your play group to control a Valheim server running on AWS EC2 using slash commands. The bot is implemented as an AWS Lambda function that communicates with Discord via API Gateway.
+This Discord bot allows your play group to control game servers running on AWS EC2 using slash commands. The bot is implemented as an AWS Lambda function that communicates with Discord via API Gateway. Each game server requires its own Discord application and bot instance.
 
 ## Features
 
-- `/valheim_status` - Check if the server is running
-- `/valheim_start` - Start the server (authorized users only)
-- `/valheim_stop` - Stop the server (authorized users only)
-- `/valheim_help` - Show available commands
+Commands use the format `/<game> <action>`:
+
+- `/<game> status` - Check if the server is running
+- `/<game> start` - Start the server (authorized users only)
+- `/<game> stop` - Stop the server (authorized users only)
+- `/<game> help` - Show available commands
+
+For example: `/valheim start`, `/satisfactory status`
 
 ## Prerequisites
 

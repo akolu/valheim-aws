@@ -1,8 +1,11 @@
 const AWS = require('aws-sdk');
 const nacl = require('tweetnacl');
 
-// Game name from environment variable
-const GAME_NAME = process.env.GAME_NAME || 'valheim';
+// Game name from environment variable (required)
+const GAME_NAME = process.env.GAME_NAME;
+if (!GAME_NAME) {
+  throw new Error('GAME_NAME environment variable is required');
+}
 
 // Discord verification
 const verifyDiscordRequest = async (signature, timestamp, body) => {
@@ -200,11 +203,12 @@ const handleStopCommand = async (userId) => {
 };
 
 const handleHelpCommand = async () => {
-  const helpText = `**${GAME_NAME.charAt(0).toUpperCase() + GAME_NAME.slice(1)} Server Commands:**
-\`/server ${GAME_NAME} status\` - Check server status
-\`/server ${GAME_NAME} start\` - Start the server
-\`/server ${GAME_NAME} stop\` - Stop the server
-\`/server ${GAME_NAME} help\` - Show this help message`;
+  const displayName = GAME_NAME.charAt(0).toUpperCase() + GAME_NAME.slice(1);
+  const helpText = `**${displayName} Server Commands:**
+\`/${GAME_NAME} status\` - Check server status
+\`/${GAME_NAME} start\` - Start the server
+\`/${GAME_NAME} stop\` - Stop the server
+\`/${GAME_NAME} help\` - Show this help message`;
 
   return {
     type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
@@ -236,15 +240,9 @@ const handleInteraction = async (interaction) => {
   const { name, options } = interaction.data;
   const userId = interaction.member?.user?.id || interaction.user?.id;
 
-  if (name === 'server') {
-    // Get the subcommand group (game name)
-    const gameGroup = options?.find(opt => opt.name === GAME_NAME);
-    if (!gameGroup) {
-      return formatResponse('Unknown game', true);
-    }
-
-    // Get the subcommand (action)
-    const subcommand = gameGroup.options?.[0];
+  // Command is /<game> <action> (e.g., /valheim start, /satisfactory status)
+  if (name === GAME_NAME) {
+    const subcommand = options?.[0];
     if (!subcommand) {
       return formatResponse('Unknown action', true);
     }
