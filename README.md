@@ -1,6 +1,6 @@
-# Valheim Server on AWS
+# Bonfire - Game Server on AWS
 
-A Terraform project for deploying a Valheim game server on AWS with basic monitoring using EC2 Spot Instances.
+A Terraform project for deploying dedicated game servers on AWS using EC2 Spot Instances. Currently supports Valheim, with an extensible architecture for adding more games.
 
 ## Prerequisites
 
@@ -13,13 +13,13 @@ A Terraform project for deploying a Valheim game server on AWS with basic monito
 1. Create an S3 bucket for Terraform state:
 
    ```
-   aws s3 mb s3://valheim-ec2-tf-state --region eu-north-1
+   aws s3 mb s3://bonfire-tf-state --region eu-north-1
    ```
 
-2. Navigate to the Valheim server directory:
+2. Navigate to the game directory:
 
    ```
-   cd terraform/valheim-server
+   cd terraform/games/valheim
    ```
 
 3. Create a `terraform.tfvars` file with your sensitive values:
@@ -30,8 +30,8 @@ A Terraform project for deploying a Valheim game server on AWS with basic monito
 
    Then edit `terraform.tfvars` to set at minimum:
 
-   - `valheim_world_name`: Name of your Valheim world
-   - `valheim_server_pass`: Password for accessing your server
+   - `world_name`: Name of your game world
+   - `server_pass`: Password for accessing your server
 
 4. Initialize Terraform:
 
@@ -94,7 +94,7 @@ To restore an existing world to your server:
 
 **Note**: While the standard Valheim file structure has `.db` files in `/worlds` and `.fwl` files in `/worlds_local`, the Docker container appears to be flexible and can find both file types in the `/worlds_local` directory.
 
-**Important**: Make sure your `valheim_world_name` in terraform.tfvars matches exactly the name of your world files (without the file extension).
+**Important**: Make sure your `world_name` in terraform.tfvars matches exactly the name of your world files (without the file extension).
 
 ## SSH Key Management
 
@@ -108,11 +108,11 @@ The deployment automatically generates an SSH key pair for connecting to the EC2
 
 ### Server Configuration
 
-You can customize your Valheim server by editing the following variables in your `terraform.tfvars` file:
+You can customize your server by editing the following variables in your `terraform.tfvars` file:
 
-- `valheim_server_name`: Display name of your server in the browser
-- `valheim_world_name`: Name of your Valheim world
-- `valheim_server_pass`: Password for accessing your server (minimum 5 characters)
+- `server_name`: Display name of your server in the browser
+- `world_name`: Name of your game world
+- `server_pass`: Password for accessing your server (minimum 5 characters for Valheim)
 
 ### Instance Type
 
@@ -120,12 +120,12 @@ You can adjust the EC2 instance type in your `terraform.tfvars` file. The defaul
 
 ### Monitoring
 
-Basic CloudWatch monitoring is set up to track network traffic metrics for the Valheim server. A CloudWatch dashboard is automatically created to monitor your instance.
+Basic CloudWatch monitoring is set up to track network traffic metrics for the game server. A CloudWatch dashboard is automatically created to monitor your instance.
 
 ## Usage
 
-- Connect to your Valheim server using the EC2 instance's public IP address (provided in the Terraform output).
-- The Valheim server will start automatically when the instance boots.
+- Connect to your game server using the EC2 instance's public IP address (provided in the Terraform output).
+- The game server will start automatically when the instance boots.
 - Monitor the server activity through the AWS CloudWatch console.
 - To start/stop the server manually, use the AWS Management Console or AWS CLI:
   ```
@@ -141,22 +141,49 @@ Basic CloudWatch monitoring is set up to track network traffic metrics for the V
 
 ## Discord Bot Integration
 
-A serverless Discord bot is provided that allows your play group to control the Valheim server directly from Discord with slash commands. It's implemented using AWS Lambda and API Gateway for virtually no cost.
+A serverless Discord bot is provided that allows your play group to control the game server directly from Discord with slash commands. It's implemented using AWS Lambda and API Gateway for virtually no cost.
 
-### Bot Features
+### Bot Commands
 
-- `/valheim_status` - Check if the server is running or stopped
-- `/valheim_start` - Start the server (authorized users only)
-- `/valheim_stop` - Stop the server (authorized users only)
-- `/valheim_help` - Show available commands
+- `/server valheim status` - Check if the server is running or stopped
+- `/server valheim start` - Start the server (authorized users only)
+- `/server valheim stop` - Stop the server (authorized users only)
+- `/server valheim help` - Show available commands
 
 ### Setup Instructions
 
 See the [Discord Bot README](discord_bot/README.md) for detailed setup and deployment instructions.
 
+## Adding a New Game
+
+To add support for a new game:
+
+1. **Copy an existing game directory**:
+   ```bash
+   cp -r terraform/games/valheim terraform/games/satisfactory
+   ```
+
+2. **Update `terraform/games/satisfactory/main.tf`**:
+   - Change `local.game` to define the new game's Docker image, ports, and environment variables
+   - Update any game-specific configuration
+
+3. **Update `terraform/games/satisfactory/variables.tf`**:
+   - Adjust variable names and defaults for the new game
+   - Add any game-specific variables needed
+
+4. **Update `terraform/games/satisfactory/backend.tf`**:
+   - Change the state key to `bonfire/satisfactory/terraform.tfstate`
+
+5. **Deploy**:
+   ```bash
+   cd terraform/games/satisfactory
+   terraform init
+   terraform apply
+   ```
+
 ## Instance State Alerts
 
-CloudWatch Event Rules are configured to track when your Valheim server instance starts or stops. These events are captured and can be used for logging and monitoring purposes.
+CloudWatch Event Rules are configured to track when your game server instance starts or stops. These events are captured and can be used for logging and monitoring purposes.
 
 The alert rules can be found in the CloudWatch console under "Rules" and could be used as triggers for custom actions in the future.
 
@@ -201,7 +228,7 @@ aws cloudtrail create-trail --name management-events --s3-bucket-name cloudtrail
 aws cloudtrail start-logging --name management-events
 ```
 
-Once CloudTrail is enabled, the EventBridge rules will automatically start capturing Valheim server state changes.
+Once CloudTrail is enabled, the EventBridge rules will automatically start capturing game server state changes.
 
 ## Clean Up
 
