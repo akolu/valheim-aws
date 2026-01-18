@@ -1,0 +1,16 @@
+# Satisfactory server configuration
+# Note: Server name and passwords are configured in-game via Server Manager
+
+# Optional: Player limit
+# max_players = 4
+
+# Optional: Instance configuration (t3.large recommended for 8GB RAM)
+# instance_type = "t3.large"
+# volume_size   = 30
+
+# Optional: Discord bot (set enable_discord_bot = true to use)
+# enable_discord_bot       = false
+# discord_public_key       = ""
+# discord_application_id   = ""
+# discord_bot_token        = ""
+# discord_authorized_users = []
