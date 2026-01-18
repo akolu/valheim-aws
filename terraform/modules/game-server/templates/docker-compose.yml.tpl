@@ -18,5 +18,4 @@ services:
     cap_add:
       - SYS_NICE
     volumes:
-      - ${data_path}:/config
       - ${data_path}:${data_path}
