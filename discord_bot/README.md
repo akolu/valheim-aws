@@ -20,99 +20,152 @@ For example: `/valheim start`, `/satisfactory status`
 ## Prerequisites
 
 - Node.js 16 or later
-- AWS account with Lambda, API Gateway, and EC2 permissions
-- Discord bot token and application ID
+- AWS CLI configured with appropriate credentials
+- Terraform installed
+- A deployed game server (you'll need the EC2 instance ID)
 
 ## Setup
 
-1. **Create a Discord Application**:
+### Step 1: Create a Discord Application
 
-   - Go to the [Discord Developer Portal](https://discord.com/developers/applications)
-   - Create a new application
-   - Under "Bot", create a bot user
-   - Copy the bot token (keep it secret)
-   - Under "OAuth2 > URL Generator", select the `bot` and `applications.commands` scopes
-   - Invite the bot to your server using the generated URL
-   - **IMPORTANT**: Add interactions endpoint url to match your ApiGW URL (available only after terraform apply - this is the one that connects Discord application to ApiGW and Lambda)
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
+2. Click "New Application" and give it a name (e.g., "Bonfire Satisfactory")
+3. Note down the **Application ID** and **Public Key** from the "General Information" page
+4. Go to "Bot" in the sidebar and click "Add Bot"
+5. Click "Reset Token" and copy the **Bot Token** (keep it secret!)
+6. Go to "OAuth2 > URL Generator":
+   - Select scopes: `bot` and `applications.commands`
+   - No bot permissions needed (the bot only responds to slash commands)
+7. Copy the generated URL and open it to invite the bot to your Discord server
 
-2. **Set Up Environment Variables**:
+### Step 2: Configure Environment Variables
 
-   - Copy `.env.example` to `.env`
+```bash
+cd discord_bot
+cp .env.example .env
+```
 
-   ```bash
-   cp .env.example .env
-   ```
+Edit `.env` with your values:
 
-   - Edit `.env` and fill in your Discord credentials and AWS configuration:
-     - `DISCORD_BOT_TOKEN` - Your bot's token
-     - `DISCORD_APP_ID` - Your application ID (NOT the bot user ID)
-     - `DISCORD_GUILD_ID` - (Optional) Server ID for testing
-     - `DISCORD_PUBLIC_KEY` - Public key for signature verification
-     - `AUTHORIZED_USERS` - (Optional) Comma-separated Discord user IDs allowed to start/stop the server
-     - `INSTANCE_ID` - Your EC2 instance ID (e.g., i-0123456789abcdef0) - **Required**
+```bash
+# Required: The game this bot controls (e.g., valheim, satisfactory)
+GAME_NAME=satisfactory
 
-3. **Register Discord Slash Commands**:
+# Required: From Discord Developer Portal
+DISCORD_BOT_TOKEN=your_bot_token
+DISCORD_APP_ID=your_application_id
+DISCORD_PUBLIC_KEY=your_public_key
 
-   ```bash
-   # Register for a specific guild (faster updates, better for testing)
-   npm run register-commands
+# Required for guild commands (recommended for testing)
+DISCORD_GUILD_ID=your_discord_server_id
+```
 
-   # Or register globally (takes up to an hour to appear)
-   npm run register-commands:global
-   ```
+To find your Discord Guild ID: Enable Developer Mode in Discord settings, then right-click your server icon and "Copy Server ID".
 
-4. **Build the Lambda Package**:
+### Step 3: Register Slash Commands
 
-   ```bash
-   npm run build
-   ```
+```bash
+npm install
+npm run register-commands
+```
 
-5. **Deploy the Lambda Function**:
-   - Deploy the generated `valheim_discord_bot.zip` package to AWS Lambda using Terraform (see the terraform directory)
+This registers `/<game>` commands to your Discord server. You should see them appear immediately.
+
+### Step 4: Build the Lambda Package
+
+```bash
+npm run build
+```
+
+This creates `bonfire_discord_bot.zip` ready for deployment.
+
+### Step 5: Configure Terraform
+
+Edit your game's `terraform.tfvars` (e.g., `terraform/games/satisfactory/terraform.tfvars`):
+
+```hcl
+enable_discord_bot       = true
+discord_public_key       = "your_public_key"
+discord_application_id   = "your_application_id"
+discord_bot_token        = "your_bot_token"
+discord_authorized_users = ["your_discord_user_id"]  # Optional
+```
+
+### Step 6: Deploy with Terraform
+
+```bash
+cd terraform/games/satisfactory  # or your game directory
+terraform apply
+```
+
+Note the `discord_bot_endpoint` output URL.
+
+### Step 7: Configure Discord Interactions Endpoint
+
+This is the critical step that connects Discord to your Lambda:
+
+1. Go back to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Select your application
+3. Go to "General Information"
+4. Paste the `discord_bot_endpoint` URL into **Interactions Endpoint URL**
+5. Click "Save Changes"
+
+Discord will verify the endpoint by sending a PING request. If it fails, check that your Lambda deployed correctly.
+
+## Testing
+
+Try the commands in your Discord server:
+
+```
+/satisfactory status
+/satisfactory start
+/satisfactory stop
+```
+
+## Troubleshooting
+
+### Commands Not Appearing
+
+- **Guild commands** appear instantly but only in the specified server
+- **Global commands** take up to an hour to propagate
+- Ensure you ran `npm run register-commands` with correct credentials
+
+### "Interaction Failed" Error
+
+- Check that Interactions Endpoint URL is set correctly in Discord Developer Portal
+- Verify the Lambda deployed successfully: `terraform output discord_bot_endpoint`
+- Check Lambda logs in CloudWatch for errors
+
+### "Invalid Signature" or Verification Failures
+
+- Ensure `DISCORD_PUBLIC_KEY` matches in both `.env` and `terraform.tfvars`
+- The public key must be the one from "General Information", not the bot token
+
+### Permission Denied on Start/Stop
+
+- Add your Discord user ID to `discord_authorized_users` in terraform.tfvars
+- To find your user ID: Enable Developer Mode in Discord, right-click your name, "Copy User ID"
+- Re-run `terraform apply` after updating
 
 ## Development
 
 ### Project Structure
 
-- `src/index.js` - Lambda function code for handling Discord interactions
-- `register-commands.js` - Script to register slash commands with Discord
-- `package.json` - Project dependencies and npm scripts
-- `.env` - Environment variables (not committed to version control)
+- `src/index.js` - Lambda handler for Discord interactions
+- `register-commands.js` - Script to register slash commands
+- `.env` - Local environment variables (not committed)
 - `.env.example` - Template for environment variables
 
 ### Available Scripts
 
-- `npm run register-commands` - Register commands to a specific guild (testing)
-- `npm run register-commands:global` - Register global commands (production)
+- `npm run register-commands` - Register commands to a specific guild
+- `npm run register-commands:global` - Register global commands (all servers)
 - `npm run build` - Build the Lambda deployment package
 
-### Modifying Commands
+### Updating Commands
 
-To change or add commands:
-
-1. Edit the commands in `register-commands.js`
-2. Run `npm run register-commands` to update Discord
-3. Update the corresponding command handling in `src/index.js`
-4. Build the Lambda package with `npm run build`
-5. Deploy the updated package
-
-### Local Testing
-
-To test the Lambda function locally:
-
-1. Set up your environment variables in `.env`
-2. Use a tool like `aws-sam-local` or AWS SAM CLI to invoke the function
-
-## Troubleshooting
-
-### Command Registration Issues
-
-- **Invalid Token**: Ensure your bot token is correct in the `.env` file
-- **Missing Permissions**: Make sure your bot has the `applications.commands` scope
-- **Guild vs Global Commands**: Guild commands register instantly but are limited to one server. Global commands can take up to an hour to propagate.
-
-### Discord Verification Failures
-
-- The bot uses Ed25519 signature verification to validate requests from Discord
-- If verification fails, ensure your DISCORD_PUBLIC_KEY environment variable is correct
-- API Gateway must use Lambda Proxy Integration to pass the raw request body
+1. Edit command definitions in `register-commands.js`
+2. Run `npm run register-commands`
+3. Update handler logic in `src/index.js` if needed
+4. Run `npm run build`
+5. Run `terraform apply` to deploy
