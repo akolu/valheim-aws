@@ -44,6 +44,31 @@ A Terraform project for deploying dedicated game servers on AWS using EC2 Spot I
    terraform apply
    ```
 
+## Migrating from Previous Version
+
+If you have an existing deployment using the old `terraform/valheim-server/` structure, migrate your Terraform state before initializing the new structure:
+
+```bash
+# Copy the state file to the new location
+aws s3 cp s3://valheim-ec2-tf-state/terraform.tfstate \
+          s3://valheim-ec2-tf-state/bonfire/valheim/terraform.tfstate
+
+# Copy your existing tfvars
+cp terraform/valheim-server/terraform.tfvars terraform/games/valheim/terraform.tfvars
+
+# Initialize in the new directory
+cd terraform/games/valheim
+terraform init
+
+# Verify the state was picked up (should show existing resources)
+terraform plan
+```
+
+**Note:** Update variable names in your tfvars if needed:
+- `valheim_world_name` → `world_name`
+- `valheim_server_name` → `server_name`
+- `valheim_server_pass` → `server_pass`
+
 ## Restoring an Existing Valheim World
 
 To restore an existing world to your server:
