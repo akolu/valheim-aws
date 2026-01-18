@@ -17,7 +17,7 @@ locals {
 
     ports = {
       udp = [7777]
-      tcp = []
+      tcp = [7777]
     }
 
     env_vars = {
@@ -25,7 +25,7 @@ locals {
     }
 
     data_path    = "/config"
-    backup_paths = ["/config/saved"]
+    backup_paths = ["/config/saved", "/config/backups"]
 
     resources = {
       instance_type = var.instance_type
