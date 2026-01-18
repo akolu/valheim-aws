@@ -28,3 +28,8 @@ output "security_group_id" {
   description = "ID of the security group"
   value       = aws_security_group.game_server_sg.id
 }
+
+output "ssh_command" {
+  description = "SSH command to connect to the server"
+  value       = "ssh -i ${var.ssh_key_name}.pem ec2-user@${var.enable_eip ? aws_eip.game_server_eip[0].public_ip : aws_spot_instance_request.game_server.public_ip}"
+}
