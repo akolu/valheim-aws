@@ -15,5 +15,5 @@ output "ssh_command" {
 
 output "discord_bot_endpoint" {
   description = "Discord bot API endpoint"
-  value       = var.enable_discord_bot ? module.discord_bot[0].api_endpoint : null
+  value       = var.enable_discord_bot ? module.discord_bot[0].discord_bot_url : null
 }
