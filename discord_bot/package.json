@@ -1,11 +1,11 @@
 {
-  "name": "valheim-discord-bot",
-  "version": "1.0.0",
-  "description": "Discord bot for controlling a Valheim server on AWS EC2",
+  "name": "bonfire-discord-bot",
+  "version": "2.0.0",
+  "description": "Discord bot for controlling game servers on AWS EC2",
   "main": "src/index.js",
   "scripts": {
     "test": "echo \"No tests configured\"",
-    "build": "npm install --omit=dev && zip -r valheim_discord_bot.zip node_modules src/index.js",
+    "build": "rm -f bonfire_discord_bot.zip && npm ci --omit=dev && zip -r bonfire_discord_bot.zip node_modules src/index.js",
     "register-commands": "npm install && node register-commands.js",
     "register-commands:global": "npm install && node register-commands.js --global"
   },

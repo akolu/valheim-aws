@@ -57,3 +57,14 @@ variable "discord_bot_dir" {
   type        = string
   default     = "../../discord_bot"
 }
+
+variable "game_name" {
+  description = "Name of the game this bot controls"
+  type        = string
+}
+
+variable "tags" {
+  description = "Tags to apply to all resources"
+  type        = map(string)
+  default     = {}
+}

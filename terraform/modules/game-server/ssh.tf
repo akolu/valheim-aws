@@ -1,11 +1,11 @@
 # Create key pair
-resource "aws_key_pair" "valheim_key" {
+resource "aws_key_pair" "game_server_key" {
   key_name   = var.ssh_key_name
   public_key = var.public_key != "" ? var.public_key : tls_private_key.ssh_key[0].public_key_openssh
 
-  tags = {
+  tags = merge(var.tags, {
     Name = var.ssh_key_name
-  }
+  })
 }
 
 # Generate SSH key if not provided

@@ -1,6 +1,9 @@
 const AWS = require('aws-sdk');
 const nacl = require('tweetnacl');
 
+// Game name from environment variable
+const GAME_NAME = process.env.GAME_NAME || 'valheim';
+
 // Discord verification
 const verifyDiscordRequest = async (signature, timestamp, body) => {
   try {
@@ -197,15 +200,28 @@ const handleStopCommand = async (userId) => {
 };
 
 const handleHelpCommand = async () => {
+  const helpText = `**${GAME_NAME.charAt(0).toUpperCase() + GAME_NAME.slice(1)} Server Commands:**
+\`/server ${GAME_NAME} status\` - Check server status
+\`/server ${GAME_NAME} start\` - Start the server
+\`/server ${GAME_NAME} stop\` - Stop the server
+\`/server ${GAME_NAME} help\` - Show this help message`;
+
   return {
     type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
     data: {
-      content: `**Available Commands**:
-• \`/valheim_status\` - Check if the server is running
-• \`/valheim_start\` - Start the server
-• \`/valheim_stop\` - Stop the server
-• \`/valheim_help\` - Show this help message`,
+      content: helpText,
       flags: 64 // Ephemeral flag - makes the message only visible to the caller
+    }
+  };
+};
+
+// Helper to format error responses
+const formatResponse = (content, ephemeral = true) => {
+  return {
+    type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
+    data: {
+      content,
+      flags: ephemeral ? 64 : 0
     }
   };
 };
@@ -217,32 +233,39 @@ const handleInteraction = async (interaction) => {
     return createJSONResponse(400, { error: 'Not a slash command' });
   }
 
-  // Extract the command name and user ID  
-  const commandName = interaction.data.name;
+  const { name, options } = interaction.data;
   const userId = interaction.member?.user?.id || interaction.user?.id;
-  
-  // Handle different commands
-  switch (commandName) {
-    case 'valheim_status':
-      return await handleStatusCommand();
-      
-    case 'valheim_start':
-      return await handleStartCommand(userId);
-      
-    case 'valheim_stop':
-      return await handleStopCommand(userId);
-      
-    case 'valheim_help':
-      return await handleHelpCommand();
-      
-    default:
-      return {
-        type: 4,
-        data: {
-          content: `Unknown command: ${commandName}`
-        }
-      };
+
+  if (name === 'server') {
+    // Get the subcommand group (game name)
+    const gameGroup = options?.find(opt => opt.name === GAME_NAME);
+    if (!gameGroup) {
+      return formatResponse('Unknown game', true);
+    }
+
+    // Get the subcommand (action)
+    const subcommand = gameGroup.options?.[0];
+    if (!subcommand) {
+      return formatResponse('Unknown action', true);
+    }
+
+    const action = subcommand.name;
+
+    switch (action) {
+      case 'status':
+        return await handleStatusCommand();
+      case 'start':
+        return await handleStartCommand(userId);
+      case 'stop':
+        return await handleStopCommand(userId);
+      case 'help':
+        return await handleHelpCommand();
+      default:
+        return formatResponse('Unknown command', true);
+    }
   }
+
+  return formatResponse('Unknown command', true);
 };
 
 // Main Lambda handler

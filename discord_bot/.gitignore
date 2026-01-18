@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 valheim_discord_bot.zip
+bonfire_discord_bot.zip
 
 # Environment variables
 .env
