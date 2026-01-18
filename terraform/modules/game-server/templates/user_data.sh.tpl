@@ -8,25 +8,25 @@ systemctl enable docker
 systemctl start docker
 
 # Create directory structure
-mkdir -p /opt/valheim
-mkdir -p /opt/valheim/scripts
+mkdir -p ${data_path}
+mkdir -p /opt/${game_name}/scripts
 
 # Create backup script
-cat > /opt/valheim/scripts/backup.sh << 'EOBAK'
+cat > /opt/${game_name}/scripts/backup.sh << 'EOBAK'
 ${backup_script_content}
 EOBAK
 
 # Create restore script
-cat > /opt/valheim/scripts/restore.sh << 'EORES'
+cat > /opt/${game_name}/scripts/restore.sh << 'EORES'
 ${restore_script_content}
 EORES
 
 # Make scripts executable
-chmod +x /opt/valheim/scripts/backup.sh
-chmod +x /opt/valheim/scripts/restore.sh
+chmod +x /opt/${game_name}/scripts/backup.sh
+chmod +x /opt/${game_name}/scripts/restore.sh
 
 # Create Docker Compose file
-cat > /opt/valheim/docker-compose.yml << 'EOT'
+cat > /opt/${game_name}/docker-compose.yml << 'EOT'
 ${docker_compose_content}
 EOT
 
@@ -35,20 +35,20 @@ curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-comp
 chmod +x /usr/local/bin/docker-compose
 
 # Setup systemd service for auto-start
-cat > /etc/systemd/system/valheim.service << 'EOSVC'
+cat > /etc/systemd/system/${game_name}.service << 'EOSVC'
 [Unit]
-Description=Valheim Server
+Description=${display_name}
 After=docker.service
 Requires=docker.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/valheim
-ExecStartPre=/opt/valheim/scripts/restore.sh
+WorkingDirectory=/opt/${game_name}
+ExecStartPre=/opt/${game_name}/scripts/restore.sh
 ExecStart=/usr/local/bin/docker-compose up -d
 ExecStop=/usr/local/bin/docker-compose down
-ExecStop=/opt/valheim/scripts/backup.sh
+ExecStop=/opt/${game_name}/scripts/backup.sh
 TimeoutStartSec=0
 TimeoutStopSec=300
 
@@ -56,7 +56,7 @@ TimeoutStopSec=300
 WantedBy=multi-user.target
 EOSVC
 
-# Enable and start valheim service
+# Enable and start game service
 systemctl daemon-reload
-systemctl enable valheim.service
-systemctl start valheim.service 
+systemctl enable ${game_name}.service
+systemctl start ${game_name}.service
