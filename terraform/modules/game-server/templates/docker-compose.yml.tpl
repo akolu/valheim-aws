@@ -1,21 +1,22 @@
 version: '3'
 services:
-  valheim:
-    image: lloesche/valheim-server:latest
-    container_name: valheim
+  ${game_name}-server:
+    image: ${docker_image}
+    container_name: ${game_name}-server
     restart: always
     ports:
-      - "2456-2458:2456-2458/udp"
+%{ for port in udp_ports ~}
+      - "${port}:${port}/udp"
+%{ endfor ~}
+%{ for port in tcp_ports ~}
+      - "${port}:${port}/tcp"
+%{ endfor ~}
     environment:
-      - SERVER_NAME=${server_name}
-      - WORLD_NAME=${world_name}
-      - SERVER_PASS=${server_pass}
-      - SERVER_PUBLIC=false
-      - TZ=Europe/Stockholm
-      - AUTO_UPDATE=1
-      - AUTO_BACKUP=1
+%{ for key, value in env_vars ~}
+      - ${key}=${value}
+%{ endfor ~}
     cap_add:
-      - SYS_NICE      
+      - SYS_NICE
     volumes:
-      - /opt/valheim/data:/config
-      - /opt/valheim/data:/opt/valheim
+      - ${data_path}:/config
+      - ${data_path}:${data_path}
