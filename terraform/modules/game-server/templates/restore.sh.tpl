@@ -15,15 +15,15 @@ if [ ! "$(ls -A $DATA_PATH 2>/dev/null)" ]; then
 
   # Clean up any previous restore attempts
   rm -rf $BACKUP_DIR
-  rm -f /tmp/${GAME_NAME}_backup.tar.gz
+  rm -f /tmp/$${GAME_NAME}_backup.tar.gz
 
   # Download backup from S3
-  if aws s3 cp "s3://$S3_BUCKET/${GAME_NAME}_backup_latest.tar.gz" "/tmp/${GAME_NAME}_backup.tar.gz"; then
+  if aws s3 cp "s3://$S3_BUCKET/$${GAME_NAME}_backup_latest.tar.gz" "/tmp/$${GAME_NAME}_backup.tar.gz"; then
     echo "Backup downloaded successfully"
 
     # Extract backup
     mkdir -p $BACKUP_DIR
-    tar -xzf "/tmp/${GAME_NAME}_backup.tar.gz" -C "/tmp"
+    tar -xzf "/tmp/$${GAME_NAME}_backup.tar.gz" -C "/tmp"
 
     # Copy restored files to data path
     cp -r $BACKUP_DIR/* "$DATA_PATH/" 2>/dev/null || echo "Warning: Failed to copy restored files"
@@ -35,7 +35,7 @@ if [ ! "$(ls -A $DATA_PATH 2>/dev/null)" ]; then
 
     # Cleanup
     rm -rf $BACKUP_DIR
-    rm -f /tmp/${GAME_NAME}_backup.tar.gz
+    rm -f /tmp/$${GAME_NAME}_backup.tar.gz
   else
     echo "Warning: No backup found in S3 bucket $S3_BUCKET"
   fi

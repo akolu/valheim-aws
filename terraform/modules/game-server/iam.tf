@@ -1,6 +1,6 @@
-# Create IAM role for CloudWatch metrics
-resource "aws_iam_role" "cloudwatch_role" {
-  name = "${var.instance_name}-cloudwatch-role"
+# Create IAM role for game server (CloudWatch metrics and S3 backups)
+resource "aws_iam_role" "game_server_role" {
+  name = "${local.instance_name}-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -15,21 +15,21 @@ resource "aws_iam_role" "cloudwatch_role" {
     ]
   })
 
-  tags = {
-    Name = "${var.instance_name}-cloudwatch-role"
-  }
+  tags = merge(var.tags, {
+    Name = "${local.instance_name}-role"
+  })
 }
 
 # Attach CloudWatch policy to the role
-resource "aws_iam_role_policy_attachment" "cloudwatch_attachment" {
-  role       = aws_iam_role.cloudwatch_role.name
+resource "aws_iam_role_policy_attachment" "game_server_cloudwatch" {
+  role       = aws_iam_role.game_server_role.name
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
 # Create S3 backup policy
-resource "aws_iam_policy" "s3_backup_policy" {
-  name        = "${var.instance_name}-s3-backup-policy"
-  description = "Policy to allow S3 access for Valheim world backups"
+resource "aws_iam_policy" "game_server_s3_backup" {
+  name        = "${local.instance_name}-s3-backup-policy"
+  description = "Policy to allow S3 access for ${local.display_name} backups"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -51,17 +51,17 @@ resource "aws_iam_policy" "s3_backup_policy" {
 }
 
 # Attach S3 backup policy to the role
-resource "aws_iam_role_policy_attachment" "s3_backup_attachment" {
-  role       = aws_iam_role.cloudwatch_role.name
-  policy_arn = aws_iam_policy.s3_backup_policy.arn
+resource "aws_iam_role_policy_attachment" "game_server_s3_backup" {
+  role       = aws_iam_role.game_server_role.name
+  policy_arn = aws_iam_policy.game_server_s3_backup.arn
 }
 
 # Create instance profile
-resource "aws_iam_instance_profile" "cloudwatch_profile" {
-  name = "${var.instance_name}-cloudwatch-profile"
-  role = aws_iam_role.cloudwatch_role.name
+resource "aws_iam_instance_profile" "game_server_profile" {
+  name = "${local.instance_name}-profile"
+  role = aws_iam_role.game_server_role.name
 
-  tags = {
-    Name = "${var.instance_name}-cloudwatch-profile"
-  }
+  tags = merge(var.tags, {
+    Name = "${local.instance_name}-profile"
+  })
 }
