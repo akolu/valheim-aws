@@ -11,6 +11,11 @@ variable "game" {
     env_vars     = map(string)
     data_path    = string
     backup_paths = list(string)
+    init_service = optional(object({
+      image    = string
+      command  = string
+      env_vars = map(string)
+    }), null)
     resources = optional(object({
       instance_type = optional(string, "t3.medium")
       volume_size   = optional(number, 30)

@@ -40,6 +40,7 @@ locals {
     tcp_ports    = local.tcp_ports
     env_vars     = local.env_vars
     data_path    = local.data_path
+    init_service = var.game.init_service
   })
 
   backup_script_content = templatefile("${path.module}/templates/backup.sh.tpl", {
