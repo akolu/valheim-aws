@@ -381,7 +381,7 @@ locals {
     # the shell command string, to prevent injection from special characters.
     init_service = var.server_pass != "" ? {
       image    = "factoriotools/factorio:stable"
-      env_vars = { SERVER_PASS = var.server_pass }
+      env_vars = { SERVER_PASS = sensitive(var.server_pass) }
       # jq confirmed available in the image (/usr/bin/jq); python3 is NOT available
       # command is fixed in the docker-compose.yml.tpl template conditional
     } : null
