@@ -110,11 +110,12 @@ Rather than requiring manual SSH to set the server password, an init service in 
         condition: service_completed_successfully
 ```
 
-**Verified facts:**
-- ✅ Example file path `/opt/factorio/data/server-settings.example.json` confirmed (Factorio game data, always present in the image).
-- ✅ `game_password` field confirmed: `  "game_password": "",` (2-space indent, empty string default). Sourced from [wube/factorio-data](https://github.com/wube/factorio-data/blob/master/server-settings.example.json).
-- ✅ `condition: service_completed_successfully` confirmed supported in Docker Compose V2 from its first Go-rewrite releases. v2.20.0 (installed by the template) is well within range. The `version: '3'` header in the template is ignored by Compose V2 — no change needed.
-- Using `python3 -c` with the `json` module instead of `sed`: handles passwords with special characters (`/`, `&`, `\`, quotes) safely. <!-- TODO: Verify python3 is available in the factoriotools/factorio image. If not, fall back to sed (safe for alphanumeric passwords only) or use jq. Check with: docker run --rm factoriotools/factorio:stable which python3 -->
+**Verified facts (confirmed by `docker run` against the actual image):**
+- ✅ `python3` / `python`: **not in the image** — cannot use
+- ✅ `jq`: **present at `/usr/bin/jq`** — use this; handles all special characters safely
+- ✅ Example file path: `/opt/factorio/data/server-settings.example.json` ✓
+- ✅ `game_password` line in example file: `  "game_password": "",` ✓
+- ✅ `condition: service_completed_successfully` confirmed in Compose V2; v2.20.0 fine ✓
 
 **Required module changes:**
 
@@ -380,11 +381,13 @@ locals {
     # TODO: Replace init_service with the actual field name/shape decided in Task 0.
     init_service = var.server_pass != "" ? {
       image   = "factoriotools/factorio:stable"
+      # jq confirmed available in the image (/usr/bin/jq); python3 is NOT available
       command = <<-EOT
         if [ ! -f /factorio/config/server-settings.json ]; then
           mkdir -p /factorio/config &&
-          cp /opt/factorio/data/server-settings.example.json /factorio/config/server-settings.json &&
-          sed -i 's/"game_password": ""/"game_password": "${var.server_pass}"/' /factorio/config/server-settings.json;
+          jq --arg pw "${var.server_pass}" '.game_password = $pw' \
+            /opt/factorio/data/server-settings.example.json \
+            > /factorio/config/server-settings.json;
         fi
       EOT
     } : null
