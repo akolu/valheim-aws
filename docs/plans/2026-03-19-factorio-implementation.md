@@ -93,10 +93,13 @@ The password is passed via environment variable — never interpolated into the 
     command: >
       if [ ! -f /factorio/config/server-settings.json ]; then
         mkdir -p /factorio/config &&
-        jq --arg pw "$SERVER_PASS" '.game_password = $pw'
-          /opt/factorio/data/server-settings.example.json
-          > /factorio/config/server-settings.json;
-      fi
+        cp /opt/factorio/data/server-settings.example.json
+           /factorio/config/server-settings.json;
+      fi &&
+      tmp=$$(mktemp) &&
+      jq --arg pw "$$SERVER_PASS" '.game_password = $$pw'
+        /factorio/config/server-settings.json > "$$tmp" &&
+      mv "$$tmp" /factorio/config/server-settings.json
     environment:
       - SERVER_PASS   # value injected by Terraform; never interpolated into the command string
     volumes:
@@ -109,6 +112,8 @@ The password is passed via environment variable — never interpolated into the 
       factorio-init:
         condition: service_completed_successfully
 ```
+
+The password patch runs on every start (outside the `if` guard), so password changes in tfvars take effect after the next `terraform apply` + instance replacement — no manual SSH needed. The `if` guard only protects the initial seed from the example file. All other fields in `server-settings.json` (server name, description, max players, etc.) are preserved since `jq` only touches `game_password`.
 
 **Verified facts (confirmed by `docker run` against the actual image):**
 - ✅ `python3` / `python`: **not in the image** — cannot use
