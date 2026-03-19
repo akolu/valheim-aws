@@ -29,7 +29,9 @@ locals {
     data_path    = "/factorio"
     backup_paths = ["/factorio/saves", "/factorio/mods"]
 
-    # Init service patches server-settings.json with the join password.
+    # Init service manages server-settings.json and the join password.
+    # Seeds config from the example on first run; patches game_password on every start
+    # so password changes in tfvars take effect after the next apply.
     # Password is passed as an env var, never interpolated into the command string.
     # $$ escaping prevents docker-compose from interpreting shell variables at parse time.
     init_service = var.server_pass != "" ? {
