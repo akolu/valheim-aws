@@ -84,6 +84,8 @@ Rather than requiring manual SSH to set the server password, an init service in 
 
 **Sketch of the init service block (docker-compose):**
 
+The password is passed via environment variable — never interpolated into the shell command string — to prevent injection attacks (passwords with `'`, `"`, `;`, `$`, etc. would otherwise break the command or execute arbitrary code).
+
 ```yaml
   factorio-init:
     image: factoriotools/factorio:stable
@@ -91,14 +93,12 @@ Rather than requiring manual SSH to set the server password, an init service in 
     command: >
       if [ ! -f /factorio/config/server-settings.json ]; then
         mkdir -p /factorio/config &&
-        cp /opt/factorio/data/server-settings.example.json /factorio/config/server-settings.json &&
-        python3 -c "
-          import json, sys
-          s = json.load(open('/factorio/config/server-settings.json'))
-          s['game_password'] = '${server_pass}'
-          json.dump(s, open('/factorio/config/server-settings.json', 'w'), indent=2)
-        ";
+        jq --arg pw "$SERVER_PASS" '.game_password = $pw'
+          /opt/factorio/data/server-settings.example.json
+          > /factorio/config/server-settings.json;
       fi
+    environment:
+      - SERVER_PASS   # value injected by Terraform; never interpolated into the command string
     volumes:
       - /factorio:/factorio
     restart: "no"
@@ -112,22 +112,25 @@ Rather than requiring manual SSH to set the server password, an init service in 
 
 **Verified facts (confirmed by `docker run` against the actual image):**
 - ✅ `python3` / `python`: **not in the image** — cannot use
-- ✅ `jq`: **present at `/usr/bin/jq`** — use this; handles all special characters safely
+- ✅ `jq`: **present at `/usr/bin/jq`** — use this; handles all special characters safely via `--arg` (no shell quoting needed)
 - ✅ Example file path: `/opt/factorio/data/server-settings.example.json` ✓
 - ✅ `game_password` line in example file: `  "game_password": "",` ✓
 - ✅ `condition: service_completed_successfully` confirmed in Compose V2; v2.20.0 fine ✓
 
 **Required module changes:**
 
-The `game-server` module's `docker-compose.yml.tpl` currently renders a single service. To support the init pattern, add an optional `init_service` field to the game config object. When non-empty, the template renders the init service block and adds `depends_on` to the main service.
+The `game-server` module's `docker-compose.yml.tpl` currently renders a single service. To support the init pattern, add an optional `init_service` field to the game config object (structured map — Option A — for type safety and consistency with the rest of the schema). When non-null, the template renders the init service block and adds `depends_on` to the main service. Existing games (Valheim, Satisfactory) leave `init_service = null` and are unaffected.
 
-<!-- TODO: Design the exact interface for init_service in the game config object and
-     docker-compose.yml.tpl. Options:
-     A) init_service as a structured map (image, command, volumes) — type-safe, more template work
-     B) init_service_yaml as a raw YAML string injected verbatim — flexible, less safe
-     Recommend option A for consistency with the rest of the game config schema.
-     Also decide: should init_service only render when server_pass != ""? (conditional in main.tf)
-     Or always render a no-op init service? The former is cleaner. -->
+The `init_service` field shape (to be added to `game-server/variables.tf`):
+
+```hcl
+init_service = optional(object({
+  image    = string
+  env_vars = map(string)   # passed as environment: in docker-compose; values Terraform-interpolated, never shell-interpolated
+}), null)
+```
+
+The `command` is fixed in the template (not configurable per game) since it is Factorio-specific logic embedded in the template conditional. If a second game ever needs init logic with a different command, this can be extended at that point.
 
 ### Terraform Variables
 
@@ -164,14 +167,10 @@ The `game-server` module's `docker-compose.yml.tpl` currently renders a single s
 - `terraform/modules/game-server/ec2.tf` (locals that build the game config)
 - `terraform/modules/game-server/variables.tf` (if game object schema needs updating)
 
-<!-- TODO: Work out the full module changes before implementing the Factorio game files.
-     The init_service interface needs to be settled first so main.tf can reference it correctly.
-     See TODO in "Server Password: Docker Compose Init Service" section above. -->
-
 **What changes:**
-- `docker-compose.yml.tpl` gains an optional init service block and conditional `depends_on` on the main service
-- The game config object gains an optional `init_service` field (or equivalent)
-- Existing games (Valheim, Satisfactory) are unaffected — they leave `init_service` empty/null
+- `game-server/variables.tf`: add `init_service = optional(object({ image = string, env_vars = map(string) }), null)` to the `game` object type
+- `docker-compose.yml.tpl`: add a conditional init service block; when `init_service != null`, render the service with `environment:` entries from `env_vars` and add `depends_on: { condition: service_completed_successfully }` to the main service
+- Existing games (Valheim, Satisfactory) are unaffected — they leave `init_service` as null
 
 **Commit:** `feat(game-server): add optional init service support to docker-compose template`
 
@@ -377,19 +376,14 @@ locals {
     backup_paths = ["/factorio/saves", "/factorio/mods"]
 
     # Init service patches server-settings.json with the password on first run.
-    # Only included when server_pass is set; empty string skips the init service entirely.
-    # TODO: Replace init_service with the actual field name/shape decided in Task 0.
+    # Only included when server_pass is set; null skips the init service entirely.
+    # The password is passed as an env var (SERVER_PASS), never interpolated into
+    # the shell command string, to prevent injection from special characters.
     init_service = var.server_pass != "" ? {
-      image   = "factoriotools/factorio:stable"
+      image    = "factoriotools/factorio:stable"
+      env_vars = { SERVER_PASS = var.server_pass }
       # jq confirmed available in the image (/usr/bin/jq); python3 is NOT available
-      command = <<-EOT
-        if [ ! -f /factorio/config/server-settings.json ]; then
-          mkdir -p /factorio/config &&
-          jq --arg pw "${var.server_pass}" '.game_password = $pw' \
-            /opt/factorio/data/server-settings.example.json \
-            > /factorio/config/server-settings.json;
-        fi
-      EOT
+      # command is fixed in the docker-compose.yml.tpl template conditional
     } : null
 
     resources = {
