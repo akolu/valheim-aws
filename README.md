@@ -203,7 +203,9 @@ To add support for a new game:
 4. **Update `terraform/games/satisfactory/backend.tf`**:
    - Change the state key to `bonfire/satisfactory/terraform.tfstate`
 
-5. **Deploy**:
+5. **If your game needs pre-start setup** (e.g. generating a config file or patching a password), add an `init_service` block to the game object in `main.tf`. See `terraform/games/factorio/main.tf` for an example.
+
+6. **Deploy**:
    ```bash
    cd terraform/games/satisfactory
    terraform init
