@@ -23,7 +23,7 @@ locals {
     env_vars = {
       SAVE_NAME         = var.save_name
       GENERATE_NEW_SAVE = "true"
-      DLC_SPACE_AGE     = var.dlc_space_age
+      DLC_SPACE_AGE     = tostring(var.dlc_space_age)
     }
 
     data_path    = "/factorio"

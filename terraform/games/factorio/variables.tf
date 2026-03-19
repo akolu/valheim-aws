@@ -26,14 +26,14 @@ variable "save_name" {
 }
 
 variable "dlc_space_age" {
-  description = "Enable Space Age DLC mods (true/false). Set to false if any player doesn't own the DLC."
-  type        = string
-  default     = "true"
+  description = "Enable Space Age DLC mods. Set to false if any player doesn't own the DLC."
+  type        = bool
+  default     = true
 }
 
 # Instance Configuration
 variable "instance_type" {
-  description = "EC2 instance type"
+  description = "EC2 instance type (t3.medium recommended for 4GB RAM)"
   type        = string
   default     = "t3.medium"
 }
