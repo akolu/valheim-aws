@@ -49,17 +49,18 @@ Config is intentionally excluded from backups — it is regenerated from default
 
 ### Environment Variables
 
-⚠️ **Low confidence — needs verification before implementing:**
+✅ **Confirmed** (verified against [`docker-entrypoint.sh`](https://github.com/factoriotools/factorio-docker/blob/master/docker/files/docker-entrypoint.sh)):
 
-| Variable           | Value           | Purpose                          |
-|--------------------|-----------------|----------------------------------|
-| `SAVE_NAME`        | `var.save_name` | Which save file to load/create   |
-| `GENERATE_NEW_SAVE`| `"true"`        | Create a new save if none exists |
+| Variable           | Value           | Purpose                                                   |
+|--------------------|-----------------|-----------------------------------------------------------|
+| `SAVE_NAME`        | `var.save_name` | Name of save file to create (required when GENERATE_NEW_SAVE=true) |
+| `GENERATE_NEW_SAVE`| `"true"`        | Generate a new save if `$SAVES/$SAVE_NAME.zip` doesn't exist; skips silently if it does |
+| `DLC_SPACE_AGE`    | `var.dlc_space_age` | Enable/disable Space Age DLC mods (image default: `"true"`) |
 
-<!-- TODO: Verify that SAVE_NAME and GENERATE_NEW_SAVE are actually supported env vars
-     in factoriotools/factorio. Check the image entrypoint script on Docker Hub or
-     https://github.com/factoriotools/factorio-docker. If not supported, remove from
-     env_vars and document the alternative (e.g. save file is auto-created at default path). -->
+**Behaviour notes:**
+- `LOAD_LATEST_SAVE` defaults to `true` — on every startup the server loads the most recent save, which is the correct behaviour after a restore.
+- `GENERATE_NEW_SAVE=true` + `SAVE_NAME` on first run: creates `world.zip` (or whatever save_name is). On subsequent starts: save exists → generation skipped → loads latest. Safe for the restore flow.
+- `DLC_SPACE_AGE=true` (image default) enables Space Age, Quality, and Elevated Rails mods server-side. Set to `"false"` if any player doesn't own the DLC.
 
 ### Server Password: Docker Compose Init Service
 
@@ -90,10 +91,13 @@ Rather than requiring manual SSH to set the server password, an init service in 
     command: >
       if [ ! -f /factorio/config/server-settings.json ]; then
         mkdir -p /factorio/config &&
-        cp /opt/factorio/data/server-settings.example.json
-           /factorio/config/server-settings.json &&
-        sed -i 's/"game_password": ""/"game_password": "${server_pass}"/'
-            /factorio/config/server-settings.json;
+        cp /opt/factorio/data/server-settings.example.json /factorio/config/server-settings.json &&
+        python3 -c "
+          import json, sys
+          s = json.load(open('/factorio/config/server-settings.json'))
+          s['game_password'] = '${server_pass}'
+          json.dump(s, open('/factorio/config/server-settings.json', 'w'), indent=2)
+        ";
       fi
     volumes:
       - /factorio:/factorio
@@ -106,20 +110,11 @@ Rather than requiring manual SSH to set the server password, an init service in 
         condition: service_completed_successfully
 ```
 
-<!-- TODO: Verify the path to the bundled example file inside the container.
-     Expected: /opt/factorio/data/server-settings.example.json
-     Check by running: docker run --rm factoriotools/factorio:stable find / -name "server-settings.example.json" 2>/dev/null -->
-
-<!-- TODO: Verify the exact JSON key and default value for game_password in the example file.
-     Expected: "game_password": ""
-     The sed pattern above assumes this exact formatting; if indented differently or quoted
-     differently it will silently fail to patch. Consider using python3 -c with json module
-     instead of sed if the image has python3 available — more robust against formatting variance. -->
-
-<!-- TODO: Verify that `condition: service_completed_successfully` is supported by the
-     version of Docker Compose installed by user_data.sh.tpl.
-     The template currently installs v2.20.0 which does support this condition, but confirm
-     the docker-compose.yml version header doesn't need to change (Compose Spec vs v3 syntax). -->
+**Verified facts:**
+- ✅ Example file path `/opt/factorio/data/server-settings.example.json` confirmed (Factorio game data, always present in the image).
+- ✅ `game_password` field confirmed: `  "game_password": "",` (2-space indent, empty string default). Sourced from [wube/factorio-data](https://github.com/wube/factorio-data/blob/master/server-settings.example.json).
+- ✅ `condition: service_completed_successfully` confirmed supported in Docker Compose V2 from its first Go-rewrite releases. v2.20.0 (installed by the template) is well within range. The `version: '3'` header in the template is ignored by Compose V2 — no change needed.
+- Using `python3 -c` with the `json` module instead of `sed`: handles passwords with special characters (`/`, `&`, `\`, quotes) safely. <!-- TODO: Verify python3 is available in the factoriotools/factorio image. If not, fall back to sed (safe for alphanumeric passwords only) or use jq. Check with: docker run --rm factoriotools/factorio:stable which python3 -->
 
 **Required module changes:**
 
@@ -140,7 +135,8 @@ The `game-server` module's `docker-compose.yml.tpl` currently renders a single s
 | `aws_region`           | string  | `"eu-north-1"`           | No       | AWS region                                        |
 | `server_name`          | string  | `"Factorio Server"`      | No       | Informational label; actual server name set in server-settings.json |
 | `server_pass`          | string  | `""`                     | No       | Join password; empty = no password. Sensitive.    |
-| `save_name`            | string  | `"world"`                | No       | Save file name to create or load                  |
+| `save_name`            | string  | `"world"`                | No       | Save file name to create on first run             |
+| `dlc_space_age`        | string  | `"true"`                 | No       | Enable Space Age DLC mods. Set to `"false"` if any player doesn't own the DLC. |
 | `instance_type`        | string  | `"t3.medium"`            | No       | EC2 instance type                                 |
 | `volume_size`          | number  | `30`                     | No       | EBS volume size in GB                             |
 | `ssh_key_name`         | string  | `"bonfire-factorio-key"` | No       | Key pair name                                     |
@@ -150,10 +146,7 @@ The `game-server` module's `docker-compose.yml.tpl` currently renders a single s
 | `enable_discord_bot`   | bool    | `false`                  | No       | Deploy Discord bot Lambda                         |
 | Discord vars           | various | (same as other games)    | No       | Standard Discord bot config                       |
 
-> **`max_players`:** Not exposed as a Terraform variable. The `factoriotools/factorio` image does not appear to support it via env var; it is set in `server-settings.json`. Since we're already patching that file via the init service, it could be added to the init script later if desired.
->
-> <!-- TODO: Confirm whether max_players (or similar) can be set via env var in this image.
->      If yes, add it as a variable alongside server_pass. -->
+> **`max_players`:** Not exposed as a Terraform variable. Set via `server-settings.json` (not supported as an env var in this image). Could be added to the init service's JSON patch if desired in the future.
 
 ### State Backend
 
@@ -240,9 +233,15 @@ variable "server_pass" {
 }
 
 variable "save_name" {
-  description = "Name of the Factorio save file to create or load"
+  description = "Name of the Factorio save file to create on first run"
   type        = string
   default     = "world"
+}
+
+variable "dlc_space_age" {
+  description = "Enable Space Age DLC mods (true/false). Set to false if any player doesn't own the DLC."
+  type        = string
+  default     = "true"
 }
 
 # Instance Configuration
@@ -368,9 +367,9 @@ locals {
     }
 
     env_vars = {
-      # TODO: Verify SAVE_NAME and GENERATE_NEW_SAVE are supported by the image before shipping
-      SAVE_NAME         = var.save_name
-      GENERATE_NEW_SAVE = "true"
+      SAVE_NAME         = var.save_name    # confirmed supported
+      GENERATE_NEW_SAVE = "true"           # confirmed supported; skips if save already exists (safe for restores)
+      DLC_SPACE_AGE     = var.dlc_space_age
     }
 
     data_path    = "/factorio"
@@ -488,6 +487,9 @@ output "discord_bot_endpoint" {
 # Optional: save file name (created fresh on first run)
 # save_name = "world"
 
+# Optional: disable Space Age DLC if any player doesn't own it
+# dlc_space_age = "false"
+
 # Optional: instance configuration
 # instance_type = "t3.medium"
 # volume_size   = 30
@@ -543,8 +545,4 @@ To connect:
 2. Friends connect via **Multiplayer → Connect to address** in the Factorio client using `<ip>:34197`
 3. Enter the password when prompted
 
-> **DLC note:** The server does not need to own Space Age. Each player's client provides DLC access — the server just runs the game engine.
-
-> <!-- TODO: Verify the DLC note above. This is the expected behaviour based on how Factorio
->      has handled DLC historically, but confirm with the factoriotools image docs or
->      Factorio's dedicated server documentation for 2.0+. -->
+> **DLC note:** The image defaults to `DLC_SPACE_AGE=true`, which enables Space Age, Quality, and Elevated Rails mods server-side. Players still need to own the DLC to access Space Age content. If any player doesn't own it, set `dlc_space_age = "false"` in your tfvars.
