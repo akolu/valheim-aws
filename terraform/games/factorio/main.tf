@@ -44,7 +44,7 @@ locals {
         mv "$$tmp" /factorio/config/server-settings.json
         EOT
       )
-      env_vars = { SERVER_PASS = sensitive(var.server_pass) }
+      env_vars = { SERVER_PASS = var.server_pass }
     } : null
 
     resources = {

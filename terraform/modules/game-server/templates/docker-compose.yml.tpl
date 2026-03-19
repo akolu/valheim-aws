@@ -8,7 +8,7 @@ services:
       ${indent(6, init_service.command)}
     environment:
 %{ for key, value in init_service.env_vars ~}
-      - ${key}=${value}
+      - "${key}=${value}"
 %{ endfor ~}
     volumes:
       - ${data_path}:${data_path}
@@ -33,7 +33,7 @@ services:
 %{ endfor ~}
     environment:
 %{ for key, value in env_vars ~}
-      - ${key}=${value}
+      - "${key}=${value}"
 %{ endfor ~}
     cap_add:
       - SYS_NICE
