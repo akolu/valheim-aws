@@ -1,0 +1,21 @@
+# Factorio server configuration
+
+# Required: set a join password (leave empty for a public server)
+# server_pass = "your-password-here"
+
+# Optional: save file name (created fresh on first run)
+# save_name = "world"
+
+# Optional: disable Space Age DLC if any player doesn't own it
+# dlc_space_age = "false"
+
+# Optional: instance configuration
+# instance_type = "t3.medium"
+# volume_size   = 30
+
+# Optional: Discord bot (set enable_discord_bot = true to use)
+# enable_discord_bot       = false
+# discord_public_key       = ""
+# discord_application_id   = ""
+# discord_bot_token        = ""
+# discord_authorized_users = []
