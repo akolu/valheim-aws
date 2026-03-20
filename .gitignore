@@ -44,4 +44,10 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
-*~ 
+*~
+
+# Gas Town polecat runtime files
+.beads/
+.claude/
+.runtime/
+CLAUDE.md
