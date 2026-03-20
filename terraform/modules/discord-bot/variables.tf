@@ -28,7 +28,7 @@ variable "discord_authorized_users" {
 }
 
 variable "discord_authorized_roles" {
-  description = "List of Discord role names authorized to control the server"
+  description = "List of Discord role IDs authorized to control the server"
   type        = list(string)
   default     = []
 }
@@ -50,12 +50,6 @@ variable "discord_bot_token" {
   type        = string
   sensitive   = true
   default     = ""
-}
-
-variable "discord_bot_dir" {
-  description = "Path to Discord bot directory containing register-commands.js"
-  type        = string
-  default     = "../../discord_bot"
 }
 
 variable "game_name" {

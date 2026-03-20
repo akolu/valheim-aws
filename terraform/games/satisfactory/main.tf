@@ -72,7 +72,6 @@ module "discord_bot" {
   discord_bot_token        = var.discord_bot_token
   discord_authorized_users = var.discord_authorized_users
   discord_authorized_roles = var.discord_authorized_roles
-  discord_bot_dir          = var.discord_bot_dir
 
   tags = local.tags
 }

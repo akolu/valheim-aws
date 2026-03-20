@@ -102,19 +102,13 @@ variable "discord_authorized_users" {
 }
 
 variable "discord_authorized_roles" {
-  description = "Discord role names authorized to control the server"
+  description = "Discord role IDs authorized to control the server"
   type        = list(string)
-  default     = ["Admin"]
+  default     = []
 }
 
 variable "discord_bot_zip_path" {
   description = "Path to Discord bot Lambda zip file"
   type        = string
   default     = "../../../discord_bot/bonfire_discord_bot.zip"
-}
-
-variable "discord_bot_dir" {
-  description = "Path to Discord bot source directory"
-  type        = string
-  default     = "../../../discord_bot"
 }
