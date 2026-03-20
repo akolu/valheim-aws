@@ -69,8 +69,9 @@ resource "aws_iam_role_policy_attachment" "discord_lambda_policy_attachment" {
 resource "aws_lambda_function" "discord_bot" {
   function_name = "${var.prefix}_discord_bot"
   role          = aws_iam_role.discord_lambda_role.arn
-  handler       = "src/index.handler"
-  runtime       = "nodejs20.x"
+  handler       = "bootstrap"
+  runtime       = "provided.al2023"
+  architectures = ["x86_64"]
   timeout       = 15
   memory_size   = 256
 
