@@ -17,6 +17,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
+// EC2API is the interface for EC2 operations used by this bot.
+// Using an interface allows tests to inject a mock without AWS credentials.
+type EC2API interface {
+	DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	StartInstances(ctx context.Context, params *ec2.StartInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error)
+	StopInstances(ctx context.Context, params *ec2.StopInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error)
+}
+
 // Lambda proxy request/response types
 type LambdaRequest struct {
 	Headers map[string]string `json:"headers"`
@@ -42,8 +50,8 @@ type Member struct {
 }
 
 type InteractionData struct {
-	Name    string        `json:"name"`
-	Options []SubCommand  `json:"options"`
+	Name    string       `json:"name"`
+	Options []SubCommand `json:"options"`
 }
 
 type SubCommand struct {
@@ -89,7 +97,7 @@ func verifyDiscordRequest(signature, timestamp, body string) bool {
 	return ed25519.Verify(ed25519.PublicKey(pubKeyBytes), message, sigBytes)
 }
 
-func getEC2Client(ctx context.Context) (*ec2.Client, error) {
+func newEC2Client(ctx context.Context) (*ec2.Client, error) {
 	region := os.Getenv("AWS_REGION")
 	if region == "" {
 		region = "eu-north-1"
@@ -108,11 +116,7 @@ type instanceInfo struct {
 	LaunchTime   *time.Time
 }
 
-func getInstanceState(ctx context.Context) (instanceInfo, error) {
-	client, err := getEC2Client(ctx)
-	if err != nil {
-		return instanceInfo{}, err
-	}
+func getInstanceState(ctx context.Context, client EC2API) (instanceInfo, error) {
 	instanceID := os.Getenv("INSTANCE_ID")
 	out, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 		InstanceIds: []string{instanceID},
@@ -137,23 +141,15 @@ func getInstanceState(ctx context.Context) (instanceInfo, error) {
 	return info, nil
 }
 
-func startInstance(ctx context.Context) error {
-	client, err := getEC2Client(ctx)
-	if err != nil {
-		return err
-	}
-	_, err = client.StartInstances(ctx, &ec2.StartInstancesInput{
+func startInstance(ctx context.Context, client EC2API) error {
+	_, err := client.StartInstances(ctx, &ec2.StartInstancesInput{
 		InstanceIds: []string{os.Getenv("INSTANCE_ID")},
 	})
 	return err
 }
 
-func stopInstance(ctx context.Context) error {
-	client, err := getEC2Client(ctx)
-	if err != nil {
-		return err
-	}
-	_, err = client.StopInstances(ctx, &ec2.StopInstancesInput{
+func stopInstance(ctx context.Context, client EC2API) error {
+	_, err := client.StopInstances(ctx, &ec2.StopInstancesInput{
 		InstanceIds: []string{os.Getenv("INSTANCE_ID")},
 	})
 	return err
@@ -188,8 +184,8 @@ func publicResponse(content string) InteractionResponse {
 	}
 }
 
-func handleStatusCommand(ctx context.Context) InteractionResponse {
-	info, err := getInstanceState(ctx)
+func handleStatusCommand(ctx context.Context, client EC2API) InteractionResponse {
+	info, err := getInstanceState(ctx, client)
 	if err != nil {
 		return ephemeralResponse(fmt.Sprintf("Error checking server status: %v", err))
 	}
@@ -206,28 +202,28 @@ func handleStatusCommand(ctx context.Context) InteractionResponse {
 	return ephemeralResponse(msg)
 }
 
-func handleStartCommand(ctx context.Context, userID string) InteractionResponse {
+func handleStartCommand(ctx context.Context, client EC2API, userID string) InteractionResponse {
 	if !isAuthorized(userID) {
 		return publicResponse("Sorry, you don't have permission to start the server.")
 	}
-	info, err := getInstanceState(ctx)
+	info, err := getInstanceState(ctx, client)
 	if err != nil {
 		return publicResponse(fmt.Sprintf("Error starting server: %v", err))
 	}
 	if info.State == "running" {
 		return publicResponse(fmt.Sprintf("Server is already running.\n🖥️ **IP Address**: %s", info.PublicIP))
 	}
-	if err := startInstance(ctx); err != nil {
+	if err := startInstance(ctx, client); err != nil {
 		return publicResponse(fmt.Sprintf("Error starting server: %v", err))
 	}
 	return publicResponse("Server is starting. It will take approximately 2-3 minutes to be available.")
 }
 
-func handleStopCommand(ctx context.Context, userID string) InteractionResponse {
+func handleStopCommand(ctx context.Context, client EC2API, userID string) InteractionResponse {
 	if !isAuthorized(userID) {
 		return publicResponse("Sorry, you don't have permission to stop the server.")
 	}
-	if err := stopInstance(ctx); err != nil {
+	if err := stopInstance(ctx, client); err != nil {
 		return publicResponse(fmt.Sprintf("Error stopping server: %v", err))
 	}
 	return publicResponse("Server is stopping. Thank you for saving AWS costs!")
@@ -241,7 +237,7 @@ func handleHelpCommand() InteractionResponse {
 	return ephemeralResponse(helpText)
 }
 
-func handleInteraction(ctx context.Context, interaction Interaction) LambdaResponse {
+func handleInteraction(ctx context.Context, interaction Interaction, client EC2API) LambdaResponse {
 	if interaction.Type != 2 {
 		return jsonResponse(400, map[string]string{"error": "Not a slash command"})
 	}
@@ -268,11 +264,11 @@ func handleInteraction(ctx context.Context, interaction Interaction) LambdaRespo
 	var interactionResp InteractionResponse
 	switch action {
 	case "status":
-		interactionResp = handleStatusCommand(ctx)
+		interactionResp = handleStatusCommand(ctx, client)
 	case "start":
-		interactionResp = handleStartCommand(ctx, userID)
+		interactionResp = handleStartCommand(ctx, client, userID)
 	case "stop":
-		interactionResp = handleStopCommand(ctx, userID)
+		interactionResp = handleStopCommand(ctx, client, userID)
 	case "help":
 		interactionResp = handleHelpCommand()
 	default:
@@ -320,8 +316,17 @@ func handler(ctx context.Context, req LambdaRequest) (LambdaResponse, error) {
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
 	}
 
-	return handleInteraction(ctx, interaction), nil
+	client, err := newEC2Client(ctx)
+	if err != nil {
+		log.Printf("Error creating EC2 client: %v", err)
+		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
+	}
+
+	return handleInteraction(ctx, interaction, client), nil
 }
+
+// Compile-time assertion that *ec2.Client satisfies EC2API.
+var _ EC2API = (*ec2.Client)(nil)
 
 func main() {
 	gameName := os.Getenv("GAME_NAME")
