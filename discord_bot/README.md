@@ -4,7 +4,7 @@ A Discord bot for controlling game servers on AWS EC2 spot instances.
 
 ## Overview
 
-This Discord bot allows your play group to control game servers running on AWS EC2 using slash commands. The bot is implemented as an AWS Lambda function that communicates with Discord via API Gateway. Each game server requires its own Discord application and bot instance.
+This Discord bot allows your play group to control game servers running on AWS EC2 using slash commands. The bot is implemented as an AWS Lambda function (Go, `provided.al2023` runtime) that communicates with Discord via API Gateway. Each game server requires its own Discord application and bot instance.
 
 ## Features
 
@@ -19,7 +19,7 @@ For example: `/valheim start`, `/satisfactory status`
 
 ## Prerequisites
 
-- Node.js 16 or later
+- Go 1.21 or later
 - AWS CLI configured with appropriate credentials
 - Terraform installed
 - A deployed game server (you'll need the EC2 instance ID)
@@ -74,10 +74,13 @@ This registers `/<game>` commands to your Discord server. You should see them ap
 ### Step 4: Build the Lambda Package
 
 ```bash
-npm run build
+cd go
+make build
 ```
 
-This creates `bonfire_discord_bot.zip` ready for deployment.
+This cross-compiles the Go binary for Linux (`GOOS=linux GOARCH=amd64`), producing a `bootstrap` binary, and packages it as `../bonfire_discord_bot.zip` ready for deployment.
+
+The Lambda uses the `provided.al2023` runtime with `bootstrap` as the handler.
 
 ### Step 5: Configure Terraform
 
@@ -146,13 +149,17 @@ Try the commands in your Discord server:
 - Add your Discord user ID to `discord_authorized_users` in terraform.tfvars
 - To find your user ID: Enable Developer Mode in Discord, right-click your name, "Copy User ID"
 - Re-run `terraform apply` after updating
+- Note: if `discord_authorized_users` is empty, all users are denied
 
 ## Development
 
 ### Project Structure
 
-- `src/index.js` - Lambda handler for Discord interactions
-- `register-commands.js` - Script to register slash commands
+- `go/main.go` - Lambda handler for Discord interactions (Go)
+- `go/main_test.go` - Unit tests
+- `go/Makefile` - Build targets
+- `go/go.mod` / `go/go.sum` - Go module dependencies
+- `register-commands.js` - Script to register slash commands (Node.js)
 - `.env` - Local environment variables (not committed)
 - `.env.example` - Template for environment variables
 
@@ -160,12 +167,35 @@ Try the commands in your Discord server:
 
 - `npm run register-commands` - Register commands to a specific guild
 - `npm run register-commands:global` - Register global commands (all servers)
-- `npm run build` - Build the Lambda deployment package
+- `make build` (in `go/`) - Build and package the Lambda deployment zip
+
+### Runtime Details
+
+- **Runtime**: `provided.al2023`
+- **Handler**: `bootstrap`
+- **Architecture**: `x86_64` (`GOARCH=amd64`)
+
+### Environment Variables (Lambda)
+
+| Variable            | Required | Description                                      |
+|---------------------|----------|--------------------------------------------------|
+| `GAME_NAME`         | Yes      | The slash command name (e.g., `satisfactory`)    |
+| `DISCORD_PUBLIC_KEY`| Yes      | Ed25519 public key from Discord Developer Portal |
+| `INSTANCE_ID`       | Yes      | EC2 instance ID to control                       |
+| `AUTHORIZED_USERS`  | No       | Comma-separated Discord user IDs for start/stop  |
+| `AWS_REGION`        | No       | AWS region (defaults to `eu-north-1`)            |
+
+### Running Tests
+
+```bash
+cd go
+go test ./...
+```
 
 ### Updating Commands
 
 1. Edit command definitions in `register-commands.js`
 2. Run `npm run register-commands`
-3. Update handler logic in `src/index.js` if needed
-4. Run `npm run build`
+3. Update handler logic in `go/main.go` if needed
+4. Run `make build` in `go/`
 5. Run `terraform apply` to deploy
