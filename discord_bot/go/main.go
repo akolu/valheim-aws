@@ -160,10 +160,11 @@ func stopInstance(ctx context.Context) error {
 }
 
 func isAuthorized(userID string) bool {
-	// Matches original JS behavior: empty AUTHORIZED_USERS means no restriction
+	// Matches original JS behavior: empty AUTHORIZED_USERS denies all
+	// JS: ''.split(',') = [''] → length > 0, guard fires → everyone denied
 	raw := os.Getenv("AUTHORIZED_USERS")
 	if raw == "" {
-		return true
+		return false
 	}
 	for _, uid := range strings.Split(raw, ",") {
 		if strings.TrimSpace(uid) == userID {
