@@ -305,27 +305,6 @@ Save files for each game are stored in dedicated long-term S3 buckets that persi
 
 These buckets are managed by the `terraform/persistent/` workspace — **separate from the per-game stacks** — so they survive `terraform destroy` on a game server. Versioning is enabled with a 90-day noncurrent version retention policy.
 
-### Initial Setup (import existing buckets)
-
-If the buckets already exist (created manually), import them into Terraform state:
-
-```bash
-cd terraform/persistent
-terraform init
-
-terraform import 'aws_s3_bucket.longterm["valheim"]' valheim-long-term-backups
-terraform import 'aws_s3_bucket.longterm["satisfactory"]' satisfactory-long-term-backups
-
-terraform import 'aws_s3_bucket_versioning.longterm["valheim"]' valheim-long-term-backups
-terraform import 'aws_s3_bucket_versioning.longterm["satisfactory"]' satisfactory-long-term-backups
-
-# Only if lifecycle rules were previously configured on the buckets:
-terraform import 'aws_s3_bucket_lifecycle_configuration.longterm["valheim"]' valheim-long-term-backups
-terraform import 'aws_s3_bucket_lifecycle_configuration.longterm["satisfactory"]' satisfactory-long-term-backups
-
-terraform plan  # should show no changes, or minor drift to reconcile
-```
-
 ### Adding a new game
 
 Add the game name to `var.games` in `terraform/persistent/variables.tf`. The bucket name is derived automatically as `{game}-long-term-backups`.
