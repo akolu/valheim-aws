@@ -443,6 +443,102 @@ func TestHandleInteraction_WrongGameName(t *testing.T) {
 	}
 }
 
+func TestHandleInteraction_HelloCommand_Authorized(t *testing.T) {
+	t.Setenv("GAME_NAME", "mc")
+	t.Setenv("INSTANCE_ID", "i-12345")
+	t.Setenv("AUTHORIZED_USERS", "user42")
+
+	mock := &mockEC2Client{}
+	interaction := Interaction{
+		Type: 2,
+		Data: InteractionData{Name: "hello"},
+		User: &User{ID: "user42"},
+	}
+	resp := handleInteraction(context.Background(), interaction, mock)
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+	ir := parseInteractionResponse(t, resp)
+	if ir.Data == nil {
+		t.Fatal("expected response data, got nil")
+	}
+	if !strings.Contains(ir.Data.Content, "reachable") {
+		t.Errorf("expected 'reachable' in response, got: %s", ir.Data.Content)
+	}
+	if !strings.Contains(ir.Data.Content, "user42") {
+		t.Errorf("expected user ID in response, got: %s", ir.Data.Content)
+	}
+	if !strings.Contains(ir.Data.Content, "authorized") {
+		t.Errorf("expected authorization status in response, got: %s", ir.Data.Content)
+	}
+	if strings.Contains(ir.Data.Content, "not authorized") {
+		t.Errorf("authorized user should not show 'not authorized', got: %s", ir.Data.Content)
+	}
+	if !strings.Contains(ir.Data.Content, "mc") {
+		t.Errorf("expected GAME_NAME in response, got: %s", ir.Data.Content)
+	}
+	if !strings.Contains(ir.Data.Content, "i-12345") {
+		t.Errorf("expected INSTANCE_ID in response, got: %s", ir.Data.Content)
+	}
+	if ir.Data.Flags != 64 {
+		t.Error("hello response should be ephemeral (flags=64)")
+	}
+	if mock.startCalled || mock.stopCalled {
+		t.Error("hello command should not make any EC2 calls")
+	}
+}
+
+func TestHandleInteraction_HelloCommand_NotAuthorized(t *testing.T) {
+	t.Setenv("GAME_NAME", "mc")
+	t.Setenv("INSTANCE_ID", "i-12345")
+	t.Setenv("AUTHORIZED_USERS", "admin")
+
+	mock := &mockEC2Client{}
+	interaction := Interaction{
+		Type: 2,
+		Data: InteractionData{Name: "hello"},
+		User: &User{ID: "stranger"},
+	}
+	resp := handleInteraction(context.Background(), interaction, mock)
+
+	ir := parseInteractionResponse(t, resp)
+	if ir.Data == nil {
+		t.Fatal("expected response data, got nil")
+	}
+	if !strings.Contains(ir.Data.Content, "not authorized") {
+		t.Errorf("expected 'not authorized' for non-authorized user, got: %s", ir.Data.Content)
+	}
+	if !strings.Contains(ir.Data.Content, "stranger") {
+		t.Errorf("expected user ID in response, got: %s", ir.Data.Content)
+	}
+}
+
+func TestHandleInteraction_HelloCommand_ViaGuildMember(t *testing.T) {
+	t.Setenv("GAME_NAME", "mc")
+	t.Setenv("INSTANCE_ID", "i-99")
+	t.Setenv("AUTHORIZED_USERS", "guilduser")
+
+	mock := &mockEC2Client{}
+	interaction := Interaction{
+		Type:   2,
+		Data:   InteractionData{Name: "hello"},
+		Member: &Member{User: &User{ID: "guilduser"}},
+	}
+	resp := handleInteraction(context.Background(), interaction, mock)
+
+	ir := parseInteractionResponse(t, resp)
+	if ir.Data == nil {
+		t.Fatal("expected response data, got nil")
+	}
+	if !strings.Contains(ir.Data.Content, "guilduser") {
+		t.Errorf("expected guild member user ID in response, got: %s", ir.Data.Content)
+	}
+	if strings.Contains(ir.Data.Content, "not authorized") {
+		t.Errorf("authorized guild member should not see 'not authorized', got: %s", ir.Data.Content)
+	}
+}
+
 func TestHandleInteraction_NonSlashCommand(t *testing.T) {
 	t.Setenv("GAME_NAME", "mc")
 

@@ -45,6 +45,10 @@ if (!isGlobal && !DISCORD_GUILD_ID) {
 // Define slash commands - /<game> <action> (e.g., /valheim start, /satisfactory status)
 const commands = [
   {
+    name: 'hello',
+    description: 'Check if the bot is reachable and verify your authorization status',
+  },
+  {
     name: gameName,
     description: `Control the ${gameName} server`,
     options: [

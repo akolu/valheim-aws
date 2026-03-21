@@ -237,9 +237,32 @@ func handleHelpCommand() InteractionResponse {
 	return ephemeralResponse(helpText)
 }
 
+func handleHelloCommand(userID string) InteractionResponse {
+	gameName := os.Getenv("GAME_NAME")
+	instanceID := os.Getenv("INSTANCE_ID")
+	authStatus := "not authorized"
+	if isAuthorized(userID) {
+		authStatus = "authorized"
+	}
+	msg := fmt.Sprintf("👋 Bot is reachable!\n👤 **Your user ID**: %s\n🔐 **Authorization**: %s\n🎮 **Game**: %s\n🖥️ **Instance ID**: %s",
+		userID, authStatus, gameName, instanceID)
+	return ephemeralResponse(msg)
+}
+
 func handleInteraction(ctx context.Context, interaction Interaction, client EC2API) LambdaResponse {
 	if interaction.Type != 2 {
 		return jsonResponse(400, map[string]string{"error": "Not a slash command"})
+	}
+
+	userID := ""
+	if interaction.Member != nil && interaction.Member.User != nil {
+		userID = interaction.Member.User.ID
+	} else if interaction.User != nil {
+		userID = interaction.User.ID
+	}
+
+	if interaction.Data.Name == "hello" {
+		return jsonResponse(200, handleHelloCommand(userID))
 	}
 
 	gameName := os.Getenv("GAME_NAME")
@@ -254,12 +277,6 @@ func handleInteraction(ctx context.Context, interaction Interaction, client EC2A
 	}
 
 	action := interaction.Data.Options[0].Name
-	userID := ""
-	if interaction.Member != nil && interaction.Member.User != nil {
-		userID = interaction.Member.User.ID
-	} else if interaction.User != nil {
-		userID = interaction.User.ID
-	}
 
 	var interactionResp InteractionResponse
 	switch action {
