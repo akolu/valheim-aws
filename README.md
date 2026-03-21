@@ -296,6 +296,48 @@ aws cloudtrail start-logging --name management-events
 
 Once CloudTrail is enabled, the EventBridge rules will automatically start capturing game server state changes.
 
+## Long-Term Backups
+
+Save files for each game are stored in dedicated long-term S3 buckets that persist independently of game server infrastructure:
+
+- `valheim-long-term-backups`
+- `satisfactory-long-term-backups`
+
+These buckets are managed by the `terraform/persistent/` workspace — **separate from the per-game stacks** — so they survive `terraform destroy` on a game server. Versioning is enabled with a 90-day noncurrent version retention policy.
+
+### Initial Setup (import existing buckets)
+
+If the buckets already exist (created manually), import them into Terraform state:
+
+```bash
+cd terraform/persistent
+terraform init
+
+terraform import 'aws_s3_bucket.longterm["valheim"]' valheim-long-term-backups
+terraform import 'aws_s3_bucket.longterm["satisfactory"]' satisfactory-long-term-backups
+
+terraform import 'aws_s3_bucket_versioning.longterm["valheim"]' valheim-long-term-backups
+terraform import 'aws_s3_bucket_versioning.longterm["satisfactory"]' satisfactory-long-term-backups
+
+# Only if lifecycle rules were previously configured on the buckets:
+terraform import 'aws_s3_bucket_lifecycle_configuration.longterm["valheim"]' valheim-long-term-backups
+terraform import 'aws_s3_bucket_lifecycle_configuration.longterm["satisfactory"]' satisfactory-long-term-backups
+
+terraform plan  # should show no changes, or minor drift to reconcile
+```
+
+### Adding a new game
+
+Add an entry to `local.longterm_buckets` in `terraform/persistent/main.tf`:
+
+```hcl
+longterm_buckets = {
+  valheim      = "valheim-long-term-backups"
+  satisfactory = "satisfactory-long-term-backups"
+  newgame      = "newgame-long-term-backups"
+}
+```
+
 ## Clean Up
 
 To remove all resources:
@@ -303,3 +345,5 @@ To remove all resources:
 ```bash
 terraform destroy
 ```
+
+**Note:** `terraform destroy` in a game workspace (`terraform/games/<game>/`) does **not** affect the long-term backup buckets. To manage those, use the `terraform/persistent/` workspace explicitly.
