@@ -35,7 +35,7 @@ func backupBucketName(game, region string) string {
 }
 
 // longtermBucketName returns the long-term S3 bucket name for a game.
-// Convention: <game>-long-term-backups (from terraform/persistent/main.tf)
+// Convention: <game>-long-term-backups (from terraform/archive/main.tf)
 func longtermBucketName(game string) string {
 	return fmt.Sprintf("%s-long-term-backups", game)
 }

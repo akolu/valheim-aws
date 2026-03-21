@@ -303,11 +303,11 @@ Save files for each game are stored in dedicated long-term S3 buckets that persi
 - `valheim-long-term-backups`
 - `satisfactory-long-term-backups`
 
-These buckets are managed by the `terraform/persistent/` workspace — **separate from the per-game stacks** — so they survive `terraform destroy` on a game server. Versioning is enabled with a 90-day noncurrent version retention policy.
+These buckets are managed by the `terraform/archive/` workspace — **separate from the per-game stacks** — so they survive `terraform destroy` on a game server. Versioning is enabled with a 90-day noncurrent version retention policy.
 
 ### Adding a new game
 
-Add the game name to `var.games` in `terraform/persistent/variables.tf`. The bucket name is derived automatically as `{game}-long-term-backups`.
+Add the game name to `var.games` in `terraform/archive/variables.tf`. The bucket name is derived automatically as `{game}-long-term-backups`.
 
 ```hcl
 variable "games" {
@@ -323,4 +323,4 @@ To remove all resources:
 terraform destroy
 ```
 
-**Note:** `terraform destroy` in a game workspace (`terraform/games/<game>/`) does **not** affect the long-term backup buckets. To manage those, use the `terraform/persistent/` workspace explicitly.
+**Note:** `terraform destroy` in a game workspace (`terraform/games/<game>/`) does **not** affect the long-term backup buckets. To manage those, use the `terraform/archive/` workspace explicitly.

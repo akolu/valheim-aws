@@ -8,7 +8,7 @@ terraform {
 
   backend "s3" {
     bucket  = "valheim-ec2-tf-state"
-    key     = "bonfire/persistent/terraform.tfstate"
+    key     = "bonfire/archive/terraform.tfstate"
     region  = "eu-north-1"
     encrypt = true
   }
