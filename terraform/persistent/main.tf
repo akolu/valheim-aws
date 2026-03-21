@@ -4,27 +4,22 @@ locals {
     ManagedBy = "terraform"
     Purpose   = "longterm-backups"
   }
-
-  longterm_buckets = {
-    valheim      = "valheim-long-term-backups"
-    satisfactory = "satisfactory-long-term-backups"
-  }
 }
 
 resource "aws_s3_bucket" "longterm" {
-  for_each = local.longterm_buckets
+  for_each = toset(var.games)
 
-  bucket        = each.value
+  bucket        = "${each.key}-long-term-backups"
   force_destroy = false
 
   tags = merge(local.tags, {
-    Name = each.value
+    Name = "${each.key}-long-term-backups"
     Game = each.key
   })
 }
 
 resource "aws_s3_bucket_versioning" "longterm" {
-  for_each = local.longterm_buckets
+  for_each = toset(var.games)
 
   bucket = aws_s3_bucket.longterm[each.key].id
 
@@ -34,7 +29,7 @@ resource "aws_s3_bucket_versioning" "longterm" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "longterm" {
-  for_each = local.longterm_buckets
+  for_each = toset(var.games)
 
   bucket = aws_s3_bucket.longterm[each.key].id
 

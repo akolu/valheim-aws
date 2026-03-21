@@ -328,13 +328,11 @@ terraform plan  # should show no changes, or minor drift to reconcile
 
 ### Adding a new game
 
-Add an entry to `local.longterm_buckets` in `terraform/persistent/main.tf`:
+Add the game name to `var.games` in `terraform/persistent/variables.tf`. The bucket name is derived automatically as `{game}-long-term-backups`.
 
 ```hcl
-longterm_buckets = {
-  valheim      = "valheim-long-term-backups"
-  satisfactory = "satisfactory-long-term-backups"
-  newgame      = "newgame-long-term-backups"
+variable "games" {
+  default = ["valheim", "satisfactory", "newgame"]
 }
 ```
 
