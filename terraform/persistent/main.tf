@@ -9,8 +9,11 @@ locals {
 resource "aws_s3_bucket" "longterm" {
   for_each = toset(var.games)
 
-  bucket        = "${each.key}-long-term-backups"
-  force_destroy = false
+  bucket = "${each.key}-long-term-backups"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   tags = merge(local.tags, {
     Name = "${each.key}-long-term-backups"
