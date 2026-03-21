@@ -9,13 +9,16 @@ resource "aws_security_group" "game_server_sg" {
   description = "Security group for ${local.display_name}"
   vpc_id      = data.aws_vpc.default.id
 
-  # SSH access
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = var.allowed_ssh_cidr_blocks
-    description = "SSH access"
+  # SSH access (break-glass only — empty by default, use SSM Session Manager instead)
+  dynamic "ingress" {
+    for_each = length(var.allowed_ssh_cidr_blocks) > 0 ? [1] : []
+    content {
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = var.allowed_ssh_cidr_blocks
+      description = "SSH access (break-glass)"
+    }
   }
 
   # UDP game ports

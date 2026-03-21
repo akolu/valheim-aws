@@ -26,6 +26,12 @@ resource "aws_iam_role_policy_attachment" "game_server_cloudwatch" {
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
+# Attach SSM policy to enable Session Manager shell access (no open SSH port needed)
+resource "aws_iam_role_policy_attachment" "game_server_ssm" {
+  role       = aws_iam_role.game_server_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 # Create S3 backup policy
 resource "aws_iam_policy" "game_server_s3_backup" {
   name        = "${local.instance_name}-s3-backup-policy"

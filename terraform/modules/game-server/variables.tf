@@ -43,9 +43,11 @@ variable "public_key" {
 }
 
 variable "allowed_ssh_cidr_blocks" {
-  description = "CIDR blocks allowed for SSH access"
+  # Break-glass only. Normal shell access uses SSM Session Manager (no open port needed).
+  # To enable emergency SSH: pass --var 'allowed_ssh_cidr_blocks=["x.x.x.x/32"]' to terraform apply.
+  description = "CIDR blocks allowed for SSH access. Empty by default — use SSM Session Manager for day-to-day access."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
 }
 
 variable "alarm_actions" {
