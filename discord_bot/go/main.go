@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -18,6 +19,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+)
+
+// Discord interaction type constants
+const (
+	discordPing           = 1
+	discordSlashCommand   = 2
+	discordChannelMessage = 4
+	discordEphemeralFlag  = 64
 )
 
 // EC2API is the interface for EC2 operations used by this bot.
@@ -82,7 +91,15 @@ type InteractionResponseData struct {
 }
 
 func jsonResponse(statusCode int, body interface{}) LambdaResponse {
-	b, _ := json.Marshal(body)
+	b, err := json.Marshal(body)
+	if err != nil {
+		log.Printf("jsonResponse: marshal error: %v", err)
+		return LambdaResponse{
+			StatusCode: 500,
+			Headers:    map[string]string{"Content-Type": "application/json"},
+			Body:       `{"error":"internal server error"}`,
+		}
+	}
 	return LambdaResponse{
 		StatusCode: statusCode,
 		Headers:    map[string]string{"Content-Type": "application/json"},
@@ -106,6 +123,16 @@ func verifyDiscordRequest(signature, timestamp, body string) bool {
 	return ed25519.Verify(ed25519.PublicKey(pubKeyBytes), message, sigBytes)
 }
 
+// Package-level client singletons for connection reuse across warm Lambda invocations.
+var (
+	ec2ClientOnce   sync.Once
+	ssmClientOnce   sync.Once
+	sharedEC2Client *ec2.Client
+	sharedSSMClient *ssm.Client
+	ec2ClientErr    error
+	ssmClientErr    error
+)
+
 func newEC2Client(ctx context.Context) (*ec2.Client, error) {
 	region := os.Getenv("AWS_REGION")
 	if region == "" {
@@ -128,6 +155,20 @@ func newSSMClient(ctx context.Context) (*ssm.Client, error) {
 		return nil, err
 	}
 	return ssm.NewFromConfig(cfg), nil
+}
+
+func getEC2Client(ctx context.Context) (*ec2.Client, error) {
+	ec2ClientOnce.Do(func() {
+		sharedEC2Client, ec2ClientErr = newEC2Client(ctx)
+	})
+	return sharedEC2Client, ec2ClientErr
+}
+
+func getSSMClient(ctx context.Context) (*ssm.Client, error) {
+	ssmClientOnce.Do(func() {
+		sharedSSMClient, ssmClientErr = newSSMClient(ctx)
+	})
+	return sharedSSMClient, ssmClientErr
 }
 
 // getSSMParam reads an SSM parameter; returns "" if the parameter does not exist.
@@ -246,14 +287,14 @@ func stopInstance(ctx context.Context, client EC2API, instanceID string) error {
 
 func ephemeralResponse(content string) InteractionResponse {
 	return InteractionResponse{
-		Type: 4,
-		Data: &InteractionResponseData{Content: content, Flags: 64},
+		Type: discordChannelMessage,
+		Data: &InteractionResponseData{Content: content, Flags: discordEphemeralFlag},
 	}
 }
 
 func publicResponse(content string) InteractionResponse {
 	return InteractionResponse{
-		Type: 4,
+		Type: discordChannelMessage,
 		Data: &InteractionResponseData{Content: content},
 	}
 }
@@ -326,6 +367,9 @@ func handleStopCommand(ctx context.Context, ec2Client EC2API, ssmClient SSMAPI, 
 }
 
 func handleHelpCommand(gameName string) InteractionResponse {
+	if gameName == "" {
+		return ephemeralResponse("Unknown command")
+	}
 	displayName := strings.ToUpper(gameName[:1]) + gameName[1:]
 	helpText := fmt.Sprintf("**%s Server Commands:**\n`/%s status` - Check server status\n`/%s start` - Start the server\n`/%s stop` - Stop the server\n`/%s help` - Show this help message",
 		displayName, gameName, gameName, gameName, gameName)
@@ -343,7 +387,7 @@ func handleHelloCommand(ctx context.Context, ssmClient SSMAPI, userID, gameName 
 }
 
 func handleInteraction(ctx context.Context, interaction Interaction, ec2Client EC2API, ssmClient SSMAPI) LambdaResponse {
-	if interaction.Type != 2 {
+	if interaction.Type != discordSlashCommand {
 		return jsonResponse(400, map[string]string{"error": "Not a slash command"})
 	}
 
@@ -413,8 +457,8 @@ func handler(ctx context.Context, req LambdaRequest) (LambdaResponse, error) {
 	}
 
 	// PING — skip guild check, respond immediately
-	if body.Type == 1 {
-		return jsonResponse(200, map[string]int{"type": 1}), nil
+	if body.Type == discordPing {
+		return jsonResponse(200, map[string]int{"type": discordPing}), nil
 	}
 
 	var interaction Interaction
@@ -423,13 +467,13 @@ func handler(ctx context.Context, req LambdaRequest) (LambdaResponse, error) {
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
 	}
 
-	ec2Client, err := newEC2Client(ctx)
+	ec2Client, err := getEC2Client(ctx)
 	if err != nil {
 		log.Printf("Error creating EC2 client: %v", err)
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
 	}
 
-	ssmClient, err := newSSMClient(ctx)
+	ssmClient, err := getSSMClient(ctx)
 	if err != nil {
 		log.Printf("Error creating SSM client: %v", err)
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil

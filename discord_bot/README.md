@@ -19,7 +19,7 @@ For example: `/valheim start`, `/satisfactory status`
 
 ## Prerequisites
 
-- Go 1.21 or later
+- Go 1.25.6 or later
 - AWS CLI configured with appropriate credentials
 - Terraform installed
 - curl (for registering slash commands)
