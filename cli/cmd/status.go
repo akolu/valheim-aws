@@ -25,6 +25,9 @@ EC2 instance state, and the last backup timestamp in S3.`,
 
 func runStatus(cmd *cobra.Command, args []string) error {
 	game := args[0]
+	if err := validateGameName(game); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

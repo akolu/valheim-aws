@@ -59,6 +59,12 @@ func runBotGrant(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	game, userID := args[0], args[1]
+	if err := validateGameName(game); err != nil {
+		return err
+	}
+	if err := validateDiscordID(userID, "user_id"); err != nil {
+		return err
+	}
 	ctx := context.Background()
 	cfg, err := awsConfig(ctx)
 	if err != nil {
@@ -76,6 +82,12 @@ func runBotRevoke(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	game, userID := args[0], args[1]
+	if err := validateGameName(game); err != nil {
+		return err
+	}
+	if err := validateDiscordID(userID, "user_id"); err != nil {
+		return err
+	}
 	ctx := context.Background()
 	cfg, err := awsConfig(ctx)
 	if err != nil {
@@ -93,6 +105,9 @@ func runBotTrust(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	guildID := args[0]
+	if err := validateDiscordID(guildID, "guild_id"); err != nil {
+		return err
+	}
 	ctx := context.Background()
 	cfg, err := awsConfig(ctx)
 	if err != nil {
@@ -109,6 +124,9 @@ func runBotUntrust(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	guildID := args[0]
+	if err := validateDiscordID(guildID, "guild_id"); err != nil {
+		return err
+	}
 	ctx := context.Background()
 	cfg, err := awsConfig(ctx)
 	if err != nil {

@@ -31,6 +31,9 @@ preserved; only the game server and backup bucket are destroyed.`,
 
 func runRetire(cmd *cobra.Command, args []string) error {
 	game := args[0]
+	if err := validateGameName(game); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cfg, err := awsConfig(ctx)
