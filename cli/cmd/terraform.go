@@ -86,6 +86,16 @@ func terraformDestroy(dir string) error {
 	return runTerraform(dir, "destroy", "-auto-approve")
 }
 
+// terraformPlanDestroy runs terraform plan -destroy, saving the plan to planFile.
+func terraformPlanDestroy(dir, planFile string) error {
+	return runTerraform(dir, "plan", "-destroy", "-out="+planFile)
+}
+
+// terraformApplyPlan runs terraform apply with a saved plan file.
+func terraformApplyPlan(dir, planFile string) error {
+	return runTerraform(dir, "apply", planFile)
+}
+
 // terraformOutput returns a map of terraform output values for the given workspace.
 func terraformOutput(dir string) (map[string]terraformOutputValue, error) {
 	cmd := exec.Command("terraform", "output", "-json")

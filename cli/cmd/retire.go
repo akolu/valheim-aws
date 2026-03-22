@@ -1,12 +1,22 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/spf13/cobra"
+)
+
+// Package-level vars for testability.
+var (
+	tfPlanDestroyFn = terraformPlanDestroy
+	tfApplyPlanFn   = terraformApplyPlan
 )
 
 var retireCmd = &cobra.Command{
@@ -27,25 +37,51 @@ func runRetire(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("loading AWS config: %w", err)
 	}
-	return retireGame(ctx, s3.NewFromConfig(cfg), cfg.Region, game)
+	return retireGame(ctx, s3.NewFromConfig(cfg), cfg.Region, game, os.Stdin)
 }
 
-// retireGame archives saves then destroys infrastructure. Accepts a client for testability.
-func retireGame(ctx context.Context, s3Client s3API, region, game string) error {
+// retireGame archives saves then destroys infrastructure. Accepts a client and stdin for testability.
+func retireGame(ctx context.Context, s3Client s3API, region, game string, stdin io.Reader) error {
 	// Step 1: Archive saves to long-term bucket
 	fmt.Printf("Step 1/2: Archiving %s saves before retire...\n", game)
 	if err := archiveGame(ctx, s3Client, region, game); err != nil {
 		return fmt.Errorf("archive failed: %w", err)
 	}
 
-	// Step 2: Terraform destroy
+	// Step 2: Plan the destroy and confirm before applying
 	dir, err := terraformDir(game)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("\nStep 2/2: Destroying %s infrastructure...\n", game)
-	if err := terraformDestroy(dir); err != nil {
-		return fmt.Errorf("terraform destroy failed: %w", err)
+
+	planFile, err := os.CreateTemp("", fmt.Sprintf("bonfire-destroy-%s-*.tfplan", game))
+	if err != nil {
+		return fmt.Errorf("creating plan file: %w", err)
+	}
+	planFile.Close()
+	planPath := planFile.Name()
+	defer os.Remove(planPath)
+
+	fmt.Printf("\nStep 2/2: Planning %s infrastructure destruction...\n", game)
+	if err := tfPlanDestroyFn(dir, planPath); err != nil {
+		return fmt.Errorf("terraform plan -destroy failed: %w", err)
+	}
+
+	fmt.Printf("\nType the game name to confirm destroy: ")
+	reader := bufio.NewReader(stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("reading confirmation: %w", err)
+	}
+	input = strings.TrimSpace(input)
+
+	if input != game {
+		fmt.Println("Aborted.")
+		return nil
+	}
+
+	if err := tfApplyPlanFn(dir, planPath); err != nil {
+		return fmt.Errorf("terraform apply failed: %w", err)
 	}
 
 	fmt.Printf("\n✓ %s retired (saves archived, infrastructure destroyed)\n", game)
