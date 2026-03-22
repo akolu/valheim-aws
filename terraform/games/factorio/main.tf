@@ -79,20 +79,3 @@ module "game_server" {
   tags             = local.tags
 }
 
-module "discord_bot" {
-  source = "../../modules/discord-bot"
-  count  = var.enable_discord_bot ? 1 : 0
-
-  game_name    = local.game.name
-  prefix       = "bonfire-${local.game.name}"
-  instance_id  = module.game_server.instance_id
-  aws_region   = var.aws_region
-
-  discord_bot_zip_path     = var.discord_bot_zip_path
-  discord_public_key       = var.discord_public_key
-  discord_application_id   = var.discord_application_id
-  discord_bot_token        = var.discord_bot_token
-  discord_authorized_users = var.discord_authorized_users
-
-  tags = local.tags
-}

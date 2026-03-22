@@ -13,9 +13,3 @@
 # instance_type = "t3.medium"  # t3.medium is sufficient for most Factorio servers
 # volume_size   = 30
 
-# Optional: Discord bot (set enable_discord_bot = true to use)
-# enable_discord_bot       = false
-# discord_public_key       = ""
-# discord_application_id   = ""
-# discord_bot_token        = ""
-# discord_authorized_users = []

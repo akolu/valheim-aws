@@ -13,7 +13,3 @@ output "ssh_command" {
   value       = module.game_server.ssh_command
 }
 
-output "discord_bot_endpoint" {
-  description = "Discord bot API endpoint"
-  value       = var.enable_discord_bot ? module.discord_bot[0].discord_bot_url : null
-}

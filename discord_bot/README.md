@@ -88,28 +88,16 @@ This cross-compiles the Go binary for Linux (`GOOS=linux GOARCH=amd64`), produci
 
 The Lambda uses the `provided.al2023` runtime with `bootstrap` as the handler.
 
-### Step 5: Configure Terraform
-
-Edit your game's `terraform.tfvars` (e.g., `terraform/games/satisfactory/terraform.tfvars`):
-
-```hcl
-enable_discord_bot       = true
-discord_public_key       = "your_public_key"
-discord_application_id   = "your_application_id"
-discord_bot_token        = "your_bot_token"
-discord_authorized_users = ["your_discord_user_id"]  # Optional
-```
-
-### Step 6: Deploy with Terraform
+### Step 5: Deploy with Terraform
 
 ```bash
-cd terraform/games/satisfactory  # or your game directory
+cd terraform/bot
 terraform apply
 ```
 
 Note the `discord_bot_endpoint` output URL.
 
-### Step 7: Configure Discord Interactions Endpoint
+### Step 6: Configure Discord Interactions Endpoint
 
 This is the critical step that connects Discord to your Lambda:
 
@@ -142,7 +130,7 @@ Try the commands in your Discord server:
 ### "Interaction Failed" Error
 
 - Check that Interactions Endpoint URL is set correctly in Discord Developer Portal
-- Verify the Lambda deployed successfully: `terraform output discord_bot_endpoint`
+- Verify the Lambda deployed successfully: `cd terraform/bot && terraform output discord_bot_endpoint`
 - Check Lambda logs in CloudWatch for errors
 
 ### "Invalid Signature" or Verification Failures
