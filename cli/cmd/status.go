@@ -65,7 +65,31 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Last Backup:    s3://%s/%s\n", backupBucket, lastBackup)
 	}
 
+	// Long-term archives
+	ltBucket := longtermBucketName(game)
+	ltPrefixes, err := listCommonPrefixes(ctx, s3Client, ltBucket)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error querying long-term archives for game %s: %v\n", game, err)
+		fmt.Printf("  Long-term Archives: error\n")
+	} else {
+		fmt.Printf("  Long-term Archives: %s\n", formatLongtermArchives(ltPrefixes))
+	}
+
 	return nil
+}
+
+// formatLongtermArchives returns a display string for the long-term archive status.
+func formatLongtermArchives(prefixes []string) string {
+	if len(prefixes) == 0 {
+		return "none"
+	}
+	latest := prefixes[0]
+	for _, p := range prefixes[1:] {
+		if p > latest {
+			latest = p
+		}
+	}
+	return fmt.Sprintf("%d snapshots, latest %s", len(prefixes), strings.TrimSuffix(latest, "/"))
 }
 
 // describeGameInstance finds the EC2 instance for a game by tag.

@@ -167,6 +167,28 @@ func spotInstanceState(ctx context.Context, ec2Client ec2API, instanceID string)
 	return ec2types.InstanceStateNameTerminated, "", nil
 }
 
+// listCommonPrefixes returns top-level "directory" prefixes in an S3 bucket by listing
+// with delimiter '/'. Each returned string is a common prefix (e.g. "2026-03-21T150405Z/").
+func listCommonPrefixes(ctx context.Context, s3Client s3API, bucket string) ([]string, error) {
+	var prefixes []string
+	paginator := s3.NewListObjectsV2Paginator(s3Client, &s3.ListObjectsV2Input{
+		Bucket:    aws.String(bucket),
+		Delimiter: aws.String("/"),
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing prefixes in s3://%s: %w", bucket, err)
+		}
+		for _, p := range page.CommonPrefixes {
+			if p.Prefix != nil {
+				prefixes = append(prefixes, *p.Prefix)
+			}
+		}
+	}
+	return prefixes, nil
+}
+
 // latestObjectByPrefix returns the lexicographically last key in a bucket with the given prefix.
 func latestObjectByPrefix(ctx context.Context, s3Client s3API, bucket, prefix string) (string, error) {
 	keys, err := listObjects(ctx, s3Client, bucket, prefix)

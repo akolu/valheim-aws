@@ -5,30 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/spf13/cobra"
 )
-
-var archiveCmd = &cobra.Command{
-	Use:   "archive <game>",
-	Short: "Copy current saves to long-term bucket (does not destroy)",
-	Long: `Copy all save files from the game's backup S3 bucket to the long-term
-bucket. Does NOT destroy the server. Use 'retire' to archive and destroy.`,
-	Args: cobra.ExactArgs(1),
-	RunE: runArchive,
-}
-
-func runArchive(cmd *cobra.Command, args []string) error {
-	game := args[0]
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	cfg, err := awsConfig(ctx)
-	if err != nil {
-		return fmt.Errorf("loading AWS config: %w", err)
-	}
-	return archiveGame(ctx, s3.NewFromConfig(cfg), cfg.Region, game)
-}
 
 // archiveGame copies all objects from the game's backup bucket to the long-term bucket.
 // It prefixes the destination keys with a timestamp to avoid collisions.

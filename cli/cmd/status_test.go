@@ -10,6 +10,40 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
+// --- formatLongtermArchives tests ---
+
+func TestFormatLongtermArchives_None(t *testing.T) {
+	got := formatLongtermArchives(nil)
+	if got != "none" {
+		t.Errorf("formatLongtermArchives(nil) = %q, want %q", got, "none")
+	}
+	got = formatLongtermArchives([]string{})
+	if got != "none" {
+		t.Errorf("formatLongtermArchives([]) = %q, want %q", got, "none")
+	}
+}
+
+func TestFormatLongtermArchives_Single(t *testing.T) {
+	got := formatLongtermArchives([]string{"2026-03-21T150405Z/"})
+	want := "1 snapshots, latest 2026-03-21T150405Z"
+	if got != want {
+		t.Errorf("formatLongtermArchives() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatLongtermArchives_MultiplePicksLatest(t *testing.T) {
+	prefixes := []string{
+		"2026-01-10T120000Z/",
+		"2026-03-21T150405Z/",
+		"2026-02-05T080000Z/",
+	}
+	got := formatLongtermArchives(prefixes)
+	want := "3 snapshots, latest 2026-03-21T150405Z"
+	if got != want {
+		t.Errorf("formatLongtermArchives() = %q, want %q", got, want)
+	}
+}
+
 func TestDescribeGameInstance_NotFound(t *testing.T) {
 	client := &mockEC2{} // empty response
 	id, state, ip, err := describeGameInstance(context.Background(), client, "valheim")

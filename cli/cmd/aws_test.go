@@ -351,3 +351,64 @@ func TestLatestObjectByPrefix_Error(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+// --- listCommonPrefixes tests ---
+
+func TestListCommonPrefixes_Empty(t *testing.T) {
+	client := &mockS3{}
+	prefixes, err := listCommonPrefixes(context.Background(), client, "my-bucket")
+	if err != nil {
+		t.Fatalf("listCommonPrefixes() error: %v", err)
+	}
+	if len(prefixes) != 0 {
+		t.Errorf("expected 0 prefixes, got %d", len(prefixes))
+	}
+}
+
+func TestListCommonPrefixes_WithPrefixes(t *testing.T) {
+	client := &mockS3{
+		listFunc: func(_ context.Context, _ *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			return &s3.ListObjectsV2Output{
+				CommonPrefixes: []s3types.CommonPrefix{
+					{Prefix: aws.String("2026-03-20T120000Z/")},
+					{Prefix: aws.String("2026-03-21T150405Z/")},
+				},
+			}, nil
+		},
+	}
+	prefixes, err := listCommonPrefixes(context.Background(), client, "my-bucket")
+	if err != nil {
+		t.Fatalf("listCommonPrefixes() error: %v", err)
+	}
+	if len(prefixes) != 2 {
+		t.Fatalf("expected 2 prefixes, got %d: %v", len(prefixes), prefixes)
+	}
+}
+
+func TestListCommonPrefixes_UsesDelimiter(t *testing.T) {
+	var gotDelimiter string
+	client := &mockS3{
+		listFunc: func(_ context.Context, params *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			if params.Delimiter != nil {
+				gotDelimiter = *params.Delimiter
+			}
+			return &s3.ListObjectsV2Output{}, nil
+		},
+	}
+	listCommonPrefixes(context.Background(), client, "bucket")
+	if gotDelimiter != "/" {
+		t.Errorf("delimiter = %q, want %q", gotDelimiter, "/")
+	}
+}
+
+func TestListCommonPrefixes_Error(t *testing.T) {
+	client := &mockS3{
+		listFunc: func(_ context.Context, _ *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			return nil, errors.New("NoSuchBucket")
+		},
+	}
+	_, err := listCommonPrefixes(context.Background(), client, "bucket")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
