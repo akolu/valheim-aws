@@ -180,6 +180,7 @@ resource "aws_apigatewayv2_stage" "bot" {
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.bot_api_access.arn
+    format          = "$context.requestId $context.httpMethod $context.routeKey $context.status $context.error.message"
   }
 
   default_route_settings {
