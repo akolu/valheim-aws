@@ -46,10 +46,10 @@ discord_bot_token = "token-abc"
 `
 	vals := parseTFVarsReader(strings.NewReader(input))
 	tests := map[string]string{
-		"world_name":            "MyWorld",
-		"enable_discord_bot":    "true",
+		"world_name":             "MyWorld",
+		"enable_discord_bot":     "true",
 		"discord_application_id": "12345",
-		"discord_bot_token":     "token-abc",
+		"discord_bot_token":      "token-abc",
 	}
 	for k, want := range tests {
 		if got := vals[k]; got != want {
@@ -104,7 +104,7 @@ func TestUpdateInteractionEndpoint_NoChange(t *testing.T) {
 		applicationID: "app-123",
 		botToken:      "tok",
 	}
-	if err := updateInteractionEndpoint(client, creds, endpoint, "valheim"); err != nil {
+	if err := updateInteractionEndpoint(client, creds, endpoint); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Should only have made 1 request (GET), no PATCH
@@ -135,7 +135,7 @@ func TestUpdateInteractionEndpoint_Updates(t *testing.T) {
 		applicationID: "app-123",
 		botToken:      "tok",
 	}
-	if err := updateInteractionEndpoint(client, creds, newEndpoint, "valheim"); err != nil {
+	if err := updateInteractionEndpoint(client, creds, newEndpoint); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(client.requests) != 2 {
@@ -153,7 +153,7 @@ func TestUpdateInteractionEndpoint_GetError(t *testing.T) {
 		},
 	}
 	creds := discordCreds{applicationID: "app-123", botToken: "bad-token"}
-	err := updateInteractionEndpoint(client, creds, "https://example.com/bot", "valheim")
+	err := updateInteractionEndpoint(client, creds, "https://example.com/bot")
 	if err == nil {
 		t.Fatal("expected error on 401, got nil")
 	}
@@ -173,15 +173,15 @@ func TestUpdateInteractionEndpoint_PatchError(t *testing.T) {
 		},
 	}
 	creds := discordCreds{applicationID: "app-123", botToken: "tok"}
-	err := updateInteractionEndpoint(client, creds, "https://new.example.com", "valheim")
+	err := updateInteractionEndpoint(client, creds, "https://new.example.com")
 	if err == nil {
 		t.Fatal("expected error on PATCH 400, got nil")
 	}
 }
 
-// --- registerSlashCommands tests ---
+// --- registerAllCommands tests ---
 
-func TestRegisterSlashCommands_GuildScope(t *testing.T) {
+func TestRegisterAllCommands_GlobalScope(t *testing.T) {
 	client := &mockHTTPClient{
 		responses: []*http.Response{
 			// GET: no current commands → commands differ → PUT
@@ -193,56 +193,28 @@ func TestRegisterSlashCommands_GuildScope(t *testing.T) {
 	creds := discordCreds{
 		applicationID: "app-123",
 		botToken:      "tok",
-		guildID:       "guild-456",
 	}
-	if err := registerSlashCommands(client, creds, "valheim"); err != nil {
+	if err := registerAllCommands(client, creds, []string{"valheim"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(client.requests) != 2 {
 		t.Fatalf("expected 2 requests (GET + PUT), got %d", len(client.requests))
 	}
-	// GET uses guild URL
-	if !strings.Contains(client.requests[0].URL.String(), "guilds/guild-456/commands") {
-		t.Errorf("expected guild URL for GET, got %s", client.requests[0].URL)
+	// Both GET and PUT use the global commands URL (no guild)
+	if strings.Contains(client.requests[0].URL.String(), "guilds") {
+		t.Errorf("expected global URL for GET, got %s", client.requests[0].URL)
 	}
-	// PUT uses guild URL
 	if client.requests[1].Method != "PUT" {
 		t.Errorf("second request method = %q, want PUT", client.requests[1].Method)
 	}
-	if !strings.Contains(client.requests[1].URL.String(), "guilds/guild-456/commands") {
-		t.Errorf("expected guild URL for PUT, got %s", client.requests[1].URL)
-	}
-}
-
-func TestRegisterSlashCommands_GlobalScope(t *testing.T) {
-	client := &mockHTTPClient{
-		responses: []*http.Response{
-			// GET: no current commands → commands differ → PUT
-			{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]"))},
-			// PUT: success
-			{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]"))},
-		},
-	}
-	creds := discordCreds{
-		applicationID: "app-123",
-		botToken:      "tok",
-		// no guildID
-	}
-	if err := registerSlashCommands(client, creds, "valheim"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(client.requests) != 2 {
-		t.Fatalf("expected 2 requests (GET + PUT), got %d", len(client.requests))
-	}
 	if strings.Contains(client.requests[1].URL.String(), "guilds") {
-		t.Errorf("expected global URL (no guild) for PUT, got %s", client.requests[1].URL)
+		t.Errorf("expected global URL for PUT, got %s", client.requests[1].URL)
 	}
 }
 
-// TestRegisterSlashCommands_NoOp verifies that no PUT is made when current
+// TestRegisterAllCommands_NoOp verifies that no PUT is made when current
 // commands already match what we would register.
-func TestRegisterSlashCommands_NoOp(t *testing.T) {
-	// Build current commands matching what registerSlashCommands would register for "valheim"
+func TestRegisterAllCommands_NoOp(t *testing.T) {
 	current := []map[string]interface{}{
 		{"id": "1", "name": "hello", "description": "Check if the bot is reachable and verify your authorization status"},
 		{"id": "2", "name": "valheim", "description": "Control the valheim server", "options": []map[string]interface{}{
@@ -257,8 +229,8 @@ func TestRegisterSlashCommands_NoOp(t *testing.T) {
 			{StatusCode: 200, Body: jsonBody(current)},
 		},
 	}
-	creds := discordCreds{applicationID: "app-123", botToken: "tok", guildID: "guild-456"}
-	if err := registerSlashCommands(client, creds, "valheim"); err != nil {
+	creds := discordCreds{applicationID: "app-123", botToken: "tok"}
+	if err := registerAllCommands(client, creds, []string{"valheim"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Only GET, no PUT
@@ -270,10 +242,9 @@ func TestRegisterSlashCommands_NoOp(t *testing.T) {
 	}
 }
 
-// TestRegisterSlashCommands_UpdatesWhenDifferent verifies that a PUT is made
-// when current commands differ (e.g. wrong subcommands).
-func TestRegisterSlashCommands_UpdatesWhenDifferent(t *testing.T) {
-	// Only one command registered currently, missing subcommands
+// TestRegisterAllCommands_UpdatesWhenDifferent verifies that a PUT is made
+// when current commands differ.
+func TestRegisterAllCommands_UpdatesWhenDifferent(t *testing.T) {
 	current := []map[string]interface{}{
 		{"id": "1", "name": "hello"},
 	}
@@ -283,8 +254,8 @@ func TestRegisterSlashCommands_UpdatesWhenDifferent(t *testing.T) {
 			{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]"))},
 		},
 	}
-	creds := discordCreds{applicationID: "app-123", botToken: "tok", guildID: "guild-456"}
-	if err := registerSlashCommands(client, creds, "valheim"); err != nil {
+	creds := discordCreds{applicationID: "app-123", botToken: "tok"}
+	if err := registerAllCommands(client, creds, []string{"valheim"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(client.requests) != 2 {
@@ -295,19 +266,72 @@ func TestRegisterSlashCommands_UpdatesWhenDifferent(t *testing.T) {
 	}
 }
 
-func TestRegisterSlashCommands_CommandPayload(t *testing.T) {
+// TestRegisterAllCommands_MultiGame verifies that all games are included in a
+// single PUT with the correct command structure.
+func TestRegisterAllCommands_MultiGame(t *testing.T) {
 	var gotBody []byte
 	client := &mockHTTPClient{
 		responses: []*http.Response{
 			{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]"))},
 		},
 	}
-	// Capture request body by wrapping
-	realClient := client
-	captureClient := &captureBodyClient{inner: realClient, capturedBody: &gotBody}
+	captureClient := &captureBodyClient{inner: client, capturedBody: &gotBody}
 
-	creds := discordCreds{applicationID: "app-123", botToken: "tok", guildID: "g1"}
-	if err := registerSlashCommands(captureClient, creds, "valheim"); err != nil {
+	creds := discordCreds{applicationID: "app-123", botToken: "tok"}
+	games := []string{"valheim", "minecraft"}
+	if err := registerAllCommands(captureClient, creds, games); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var commands []discordCommand
+	if err := json.Unmarshal(gotBody, &commands); err != nil {
+		t.Fatalf("parsing command payload: %v", err)
+	}
+
+	// Expect /hello + one command per game
+	if len(commands) != 3 {
+		t.Fatalf("expected 3 commands (/hello + 2 games), got %d", len(commands))
+	}
+
+	if commands[0].Name != "hello" {
+		t.Errorf("commands[0].Name = %q, want %q", commands[0].Name, "hello")
+	}
+
+	byName := map[string]discordCommand{}
+	for _, c := range commands {
+		byName[c.Name] = c
+	}
+
+	for _, game := range games {
+		c, ok := byName[game]
+		if !ok {
+			t.Errorf("missing command for game %q", game)
+			continue
+		}
+		subNames := map[string]bool{}
+		for _, opt := range c.Options {
+			subNames[opt.Name] = true
+		}
+		for _, want := range []string{"status", "start", "stop", "help"} {
+			if !subNames[want] {
+				t.Errorf("missing subcommand %q in /%s options", want, game)
+			}
+		}
+	}
+}
+
+// TestRegisterAllCommands_SingleGamePayload verifies the command payload for a single game.
+func TestRegisterAllCommands_SingleGamePayload(t *testing.T) {
+	var gotBody []byte
+	client := &mockHTTPClient{
+		responses: []*http.Response{
+			{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]"))},
+		},
+	}
+	captureClient := &captureBodyClient{inner: client, capturedBody: &gotBody}
+
+	creds := discordCreds{applicationID: "app-123", botToken: "tok"}
+	if err := registerAllCommands(captureClient, creds, []string{"valheim"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -319,12 +343,10 @@ func TestRegisterSlashCommands_CommandPayload(t *testing.T) {
 		t.Fatalf("expected 2 commands, got %d", len(commands))
 	}
 
-	// First command: /hello
 	if commands[0].Name != "hello" {
 		t.Errorf("commands[0].Name = %q, want %q", commands[0].Name, "hello")
 	}
 
-	// Second command: /valheim with 4 subcommands
 	if commands[1].Name != "valheim" {
 		t.Errorf("commands[1].Name = %q, want %q", commands[1].Name, "valheim")
 	}
@@ -339,14 +361,14 @@ func TestRegisterSlashCommands_CommandPayload(t *testing.T) {
 	}
 }
 
-func TestRegisterSlashCommands_HTTPError(t *testing.T) {
+func TestRegisterAllCommands_HTTPError(t *testing.T) {
 	client := &mockHTTPClient{
 		responses: []*http.Response{
 			{StatusCode: 403, Body: io.NopCloser(strings.NewReader(`{"message":"missing permissions"}`))},
 		},
 	}
 	creds := discordCreds{applicationID: "app-123", botToken: "tok"}
-	err := registerSlashCommands(client, creds, "valheim")
+	err := registerAllCommands(client, creds, []string{"valheim"})
 	if err == nil {
 		t.Fatal("expected error on 403, got nil")
 	}

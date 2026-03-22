@@ -1,15 +1,12 @@
 package cmd
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -23,14 +20,14 @@ var botCmd = &cobra.Command{
 }
 
 var botUpdateCmd = &cobra.Command{
-	Use:   "update [game]",
+	Use:   "update",
 	Short: "Update Discord bot interaction endpoint and slash commands",
 	Long: `Update the Discord bot interaction endpoint URL and register slash commands.
-Safe to re-run at any time — only calls the Discord API if the endpoint has changed.
+Safe to re-run at any time — only calls the Discord API if the endpoint or commands have changed.
 
-Without a game argument, updates all games that have enable_discord_bot=true and
-Discord credentials configured. With a game argument, targets that game only.`,
-	Args: cobra.MaximumNArgs(1),
+Reads credentials from terraform/bot/terraform.tfvars and endpoint from terraform/bot/ output.
+Registers commands for all games in a single global PUT.`,
+	Args: cobra.NoArgs,
 	RunE: runBotUpdate,
 }
 
@@ -39,153 +36,67 @@ func init() {
 }
 
 func runBotUpdate(cmd *cobra.Command, args []string) error {
-	var games []string
-	if len(args) == 1 {
-		games = []string{args[0]}
-	} else {
-		var err error
-		games, err = availableGames()
-		if err != nil {
-			return err
-		}
-	}
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	anyUpdated := false
-	for _, game := range games {
-		updated, err := botUpdateGame(client, game)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "  [%s] error: %v\n", game, err)
-			continue
-		}
-		if updated {
-			anyUpdated = true
-		}
-	}
-	if !anyUpdated && len(args) == 0 {
-		fmt.Println("No games with Discord bot configured.")
-	}
-	return nil
-}
-
-// botUpdateGame updates the Discord bot for a single game.
-// Returns true if any Discord API calls were made.
-func botUpdateGame(client httpClient, game string) (bool, error) {
-	dir, err := terraformDir(game)
+	root, err := findRepoRoot()
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	creds, err := readDiscordCreds(dir)
+	botDir := filepath.Join(root, "terraform", "bot")
+
+	creds, err := readBotCreds(botDir)
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	if !creds.enabled {
-		return false, nil
-	}
-
-	if creds.applicationID == "" || creds.botToken == "" || creds.publicKey == "" {
-		return false, fmt.Errorf("enable_discord_bot=true but missing credentials (need discord_application_id, discord_bot_token, discord_public_key)")
-	}
-
-	fmt.Printf("[%s] Updating Discord bot...\n", game)
-
-	// Get current endpoint from Terraform output
-	outputs, err := terraformOutput(dir)
+	outputs, err := terraformOutput(botDir)
 	if err != nil {
-		return false, fmt.Errorf("getting terraform output discord_bot_endpoint: %w", err)
+		return fmt.Errorf("getting terraform output: %w", err)
 	}
 	endpointOutput, ok := outputs["discord_bot_endpoint"]
 	if !ok {
-		return false, fmt.Errorf("terraform output discord_bot_endpoint not found — bot may not be deployed")
+		return fmt.Errorf("terraform output discord_bot_endpoint not found — bot may not be deployed")
 	}
 	endpoint := endpointOutput.String()
 	if endpoint == "" {
-		return false, fmt.Errorf("terraform output discord_bot_endpoint is empty — bot may not be deployed")
+		return fmt.Errorf("terraform output discord_bot_endpoint is empty — bot may not be deployed")
 	}
 
-	// Update interaction endpoint (no-op if unchanged)
-	if err := updateInteractionEndpoint(client, creds, endpoint, game); err != nil {
-		return true, err
+	games, err := availableGames()
+	if err != nil {
+		return err
 	}
 
-	// Register slash commands
-	if err := registerSlashCommands(client, creds, game); err != nil {
-		return true, err
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	if err := updateInteractionEndpoint(client, creds, endpoint); err != nil {
+		return err
 	}
 
-	return true, nil
+	return registerAllCommands(client, creds, games)
 }
 
-type discordCreds struct {
-	enabled       bool
-	applicationID string
-	botToken      string
-	publicKey     string
-	guildID       string
-}
-
-// readDiscordCreds parses discord credentials from terraform.tfvars in dir.
-// Falls back to discord_bot/.env for DISCORD_GUILD_ID if not in tfvars.
-func readDiscordCreds(dir string) (discordCreds, error) {
+// readBotCreds reads Discord credentials from terraform/bot/terraform.tfvars.
+func readBotCreds(dir string) (discordCreds, error) {
 	tfvarsPath := filepath.Join(dir, "terraform.tfvars")
 	vals, err := parseTFVars(tfvarsPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return discordCreds{}, nil
-		}
-		return discordCreds{}, fmt.Errorf("reading terraform.tfvars: %w", err)
+		return discordCreds{}, fmt.Errorf("reading terraform/bot/terraform.tfvars: %w", err)
 	}
-
 	creds := discordCreds{
-		enabled:       vals["enable_discord_bot"] == "true",
 		applicationID: vals["discord_application_id"],
 		botToken:      vals["discord_bot_token"],
 		publicKey:     vals["discord_public_key"],
-		guildID:       vals["discord_guild_id"],
 	}
-
-	// Fallback: try discord_bot/.env for DISCORD_GUILD_ID
-	if creds.guildID == "" {
-		root, _ := findRepoRoot()
-		if root != "" {
-			envPath := filepath.Join(root, "discord_bot", ".env")
-			envVals, _ := parseDotEnv(envPath)
-			creds.guildID = envVals["DISCORD_GUILD_ID"]
-		}
+	if creds.applicationID == "" || creds.botToken == "" || creds.publicKey == "" {
+		return discordCreds{}, fmt.Errorf("missing credentials in terraform/bot/terraform.tfvars (need discord_application_id, discord_bot_token, discord_public_key)")
 	}
-
 	return creds, nil
 }
 
-// parseDotEnv parses KEY=value lines from a .env file.
-func parseDotEnv(path string) (map[string]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	result := make(map[string]string)
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		idx := strings.Index(line, "=")
-		if idx < 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
-		// Strip surrounding quotes
-		if len(val) >= 2 && (val[0] == '"' || val[0] == '\'') && val[len(val)-1] == val[0] {
-			val = val[1 : len(val)-1]
-		}
-		result[key] = val
-	}
-	return result, nil
+type discordCreds struct {
+	applicationID string
+	botToken      string
+	publicKey     string
 }
 
 // httpClient is an interface for making HTTP requests (enables testing).
@@ -195,12 +106,11 @@ type httpClient interface {
 
 // updateInteractionEndpoint checks the current endpoint via GET /applications/@me
 // and patches it if different.
-func updateInteractionEndpoint(client httpClient, creds discordCreds, newEndpoint, game string) error {
+func updateInteractionEndpoint(client httpClient, creds discordCreds, newEndpoint string) error {
 	type appResponse struct {
 		InteractionsEndpointURL string `json:"interactions_endpoint_url"`
 	}
 
-	// GET current endpoint
 	req, err := http.NewRequest("GET", discordAPIBase+"/applications/@me", nil)
 	if err != nil {
 		return err
@@ -224,11 +134,10 @@ func updateInteractionEndpoint(client httpClient, creds discordCreds, newEndpoin
 	}
 
 	if current.InteractionsEndpointURL == newEndpoint {
-		fmt.Printf("  [%s] Interaction endpoint unchanged — no-op\n", game)
+		fmt.Println("Interaction endpoint unchanged — no-op")
 		return nil
 	}
 
-	// PATCH to update endpoint
 	payload, _ := json.Marshal(map[string]string{
 		"interactions_endpoint_url": newEndpoint,
 	})
@@ -250,14 +159,14 @@ func updateInteractionEndpoint(client httpClient, creds discordCreds, newEndpoin
 		return fmt.Errorf("PATCH /applications/%s: HTTP %d: %s", creds.applicationID, resp.StatusCode, body)
 	}
 
-	fmt.Printf("  [%s] ✓ Interaction endpoint updated: %s\n", game, newEndpoint)
+	fmt.Printf("✓ Interaction endpoint updated: %s\n", newEndpoint)
 	return nil
 }
 
 type discordCommand struct {
-	Name        string                   `json:"name"`
-	Description string                   `json:"description"`
-	Options     []discordCommandOption   `json:"options,omitempty"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Options     []discordCommandOption `json:"options,omitempty"`
 }
 
 type discordCommandOption struct {
@@ -266,15 +175,17 @@ type discordCommandOption struct {
 	Type        int    `json:"type"` // 1 = SUB_COMMAND
 }
 
-// registerSlashCommands registers /hello and /<game> via PUT bulk endpoint.
+// registerAllCommands registers /hello and /<game> for each game via a single global PUT.
 // First checks current commands via GET and skips the PUT if unchanged.
-func registerSlashCommands(client httpClient, creds discordCreds, game string) error {
+func registerAllCommands(client httpClient, creds discordCreds, games []string) error {
 	commands := []discordCommand{
 		{
 			Name:        "hello",
 			Description: "Check if the bot is reachable and verify your authorization status",
 		},
-		{
+	}
+	for _, game := range games {
+		commands = append(commands, discordCommand{
 			Name:        game,
 			Description: fmt.Sprintf("Control the %s server", game),
 			Options: []discordCommandOption{
@@ -283,22 +194,11 @@ func registerSlashCommands(client httpClient, creds discordCreds, game string) e
 				{Name: "stop", Description: fmt.Sprintf("Stop the %s server", game), Type: 1},
 				{Name: "help", Description: fmt.Sprintf("Show available commands for the %s server", game), Type: 1},
 			},
-		},
+		})
 	}
 
-	var url string
-	if creds.guildID != "" {
-		url = fmt.Sprintf("%s/applications/%s/guilds/%s/commands", discordAPIBase, creds.applicationID, creds.guildID)
-	} else {
-		url = fmt.Sprintf("%s/applications/%s/commands", discordAPIBase, creds.applicationID)
-	}
+	url := fmt.Sprintf("%s/applications/%s/commands", discordAPIBase, creds.applicationID)
 
-	scope := "global"
-	if creds.guildID != "" {
-		scope = "guild " + creds.guildID
-	}
-
-	// GET current commands
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
@@ -322,11 +222,10 @@ func registerSlashCommands(client httpClient, creds discordCreds, game string) e
 	}
 
 	if !commandsChanged(current, commands) {
-		fmt.Printf("  [%s] Slash commands unchanged — no-op (%s)\n", game, scope)
+		fmt.Printf("Slash commands unchanged — no-op (global, %d games)\n", len(games))
 		return nil
 	}
 
-	// PUT to update commands
 	payload, err := json.Marshal(commands)
 	if err != nil {
 		return err
@@ -350,7 +249,7 @@ func registerSlashCommands(client httpClient, creds discordCreds, game string) e
 		return fmt.Errorf("PUT commands: HTTP %d: %s", resp.StatusCode, body)
 	}
 
-	fmt.Printf("  [%s] ✓ Slash commands registered (%s)\n", game, scope)
+	fmt.Printf("✓ Slash commands registered (global, %d games)\n", len(games))
 	return nil
 }
 
