@@ -42,6 +42,12 @@ tag:Project=bonfire
 
 This pattern is already used in the CLI (`status.go`, `list.go`). No `INSTANCE_ID` env var needed. Adding a new game requires no Lambda redeployment — the new EC2 instance is discovered automatically.
 
+**Pre-requisite: fix spot instance tagging.** Terraform's `tags` block on `aws_spot_instance_request` tags the *spot request*, not the underlying EC2 instance. `DescribeInstances` filtering by `tag:Game` will return nothing unless the instance itself carries the tag. Fix: add `aws_ec2_tag` resources to the game-server module that explicitly tag the instance using `aws_spot_instance_request.game_server.spot_instance_id` after fulfillment. This must be done before the single bot can discover instances.
+
+**Error cases the Lambda must handle:**
+- No instance found for game → return user-facing error ("no server found for \<game\>")
+- Multiple instances found with same tags → return error ("multiple instances found for \<game\> — ambiguous")
+
 ### Authorization — SSM Parameter Store
 
 Per-game authorized user lists stored in SSM Standard Parameters (free tier):
@@ -62,7 +68,7 @@ No raw AWS CLI interaction needed — `bonfire` is the single operator interface
 
 **Why SSM over EC2 tags:** Tags require update regardless, so the "stateless" benefit of tags doesn't apply. SSM is the conventional place for per-resource config, is IAM-controllable, and is free at this scale.
 
-**Behavior:** If parameter is absent or empty → allow all users (same as current default).
+**Behavior:** If parameter is absent or empty → deny all (fail closed). This matches the existing Go bot behavior where an empty `AUTHORIZED_USERS` denies everyone.
 
 ### Command Registration — Global
 
@@ -90,6 +96,8 @@ bonfire bot update --remove-guild guild_id_2
 
 An empty allowlist is a misconfiguration and should cause the Lambda to reject all requests (fail closed, not open).
 
+**PING exemption:** Discord sends a type=1 PING (no `guild_id`) to verify the interaction endpoint URL. The guild allowlist check must be skipped for PINGs — only applied to type=2 slash command interactions. The existing handler already responds to PINGs before any game logic; this ordering must be preserved.
+
 ### Terraform Workspace
 
 New `terraform/bot/` workspace — same pattern as `terraform/archive/`. Independent state, survives per-game `terraform destroy`. Contains:
@@ -112,6 +120,7 @@ Everything else (game name, instance ID, authorized users, guild ID) is dynamic 
 
 ## Migration Path
 
+0. **Fix spot instance tagging** — add `aws_ec2_tag` resources to `terraform/modules/game-server/` and `terraform apply` each game stack. Verify instances carry `tag:Game` and `tag:Project=bonfire` before proceeding.
 1. Deploy `terraform/bot/` with the new shared Lambda
 2. Register all game slash commands to the single Discord app (`bonfire bot update`)
 3. Update the Discord app's Interactions Endpoint URL (via portal or `bonfire bot update`)
@@ -123,17 +132,20 @@ Everything else (game name, instance ID, authorized users, guild ID) is dynamic 
 
 ## Go Lambda Changes
 
-- Remove `GAME_NAME` env var — infer from interaction command name
+- Remove `GAME_NAME` env var — infer from interaction command name (affects `handleHelpCommand` and `handleHelloCommand` which currently read `os.Getenv("GAME_NAME")` directly)
 - Remove `INSTANCE_ID` env var — query EC2 by `tag:Game` + `tag:Project=bonfire`
 - Remove per-game `AUTHORIZED_USERS` env var — read from SSM `/bonfire/<game>/authorized_users`
-- Add guild allowlist check on every invocation — read `/bonfire/allowed_guilds`, reject if guild not in list (fail closed if list is empty)
+- Add `GuildID string \`json:"guild_id"\`` to the `Interaction` struct
+- Add guild allowlist check on every type=2 invocation — read `/bonfire/allowed_guilds`, reject if guild not in list (fail closed if list is empty); skip for type=1 PING
 - Single binary handles N games without configuration changes when games are added/removed
 
 ---
 
 ## CLI Impact
 
-`bonfire bot update [game]` (bo-07d, already implemented) works with this architecture unchanged — it registers commands and syncs the endpoint for the single Discord app.
+`bonfire bot update` needs changes for the single bot architecture:
+- **Credential source**: reads from `terraform/bot/terraform.tfvars` (new workspace) rather than per-game tfvars
+- **Command registration**: must gather all games and register all commands in a single bulk PUT. The current per-game loop does one PUT per game, each overwriting the previous — with a shared Discord app this would leave only the last game's commands registered.
 
 Full bot subcommand interface:
 
