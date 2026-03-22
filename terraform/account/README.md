@@ -1,29 +1,44 @@
 # terraform/account
 
-Account-level bootstrap: IAM permission boundary, delegation policy, deploy role,
-and minimal base user. This stack must be applied manually — `bonfire-deploy` cannot
-apply its own stack (see [Chicken-and-egg problem](#chicken-and-egg-problem) below).
+Account-level bootstrap: IAM permission boundary, deploy role, admin role,
+and minimal base user. This stack must be applied manually — neither
+`bonfire-deploy` nor `bonfire-admin` can apply their own stack on first run
+(see [Chicken-and-egg problem](#chicken-and-egg-problem) below).
 
 ## What this stack creates
 
 - **`bonfire-deploy-permission-boundary`** — IAM policy attached as a permission
-  boundary to `bonfire-deploy-role`. Allows PowerUser-level actions but blocks all
-  IAM write operations by default. The boundary is what makes the delegation pattern
-  safe: any role created by the deploy role inherits the same constraint.
+  boundary to `bonfire-deploy-role`. Allows PowerUser-level actions but blocks
+  **all** `iam:*`, `organizations:*`, and `account:*` operations. The deploy
+  role cannot touch IAM at all — account-level changes go through
+  `bonfire-admin-role` instead.
 
-- **`bonfire-deploy-iam-delegation`** — IAM policy that re-grants specific IAM role
-  management actions (create, attach, delete, pass) to `bonfire-deploy-role`, but
-  only when the same permission boundary is enforced on the target resource. This
-  allows Terraform to create Lambda execution roles and EC2 instance profiles without
-  opening an escalation path.
+- **`bonfire-deploy-role`** — IAM role assumed by Terraform for all routine
+  infrastructure stacks (`terraform/bot/`, `terraform/games/*`, etc.). Carries
+  `PowerUserAccess` constrained by the permission boundary. The trust policy
+  allows only `bonfire-base` to assume it. No MFA required (used frequently by
+  CI/automation).
 
-- **`bonfire-deploy-role`** — IAM role assumed by Terraform for all other stacks.
-  Carries `PowerUserAccess` plus `bonfire-deploy-iam-delegation`, constrained by the
-  permission boundary. The trust policy allows only `bonfire-base` to assume it.
+- **`bonfire-admin-role`** — IAM role assumed by Terraform for account-level
+  changes only. Carries `AdministratorAccess` (full IAM). **Requires MFA** to
+  assume — the trust policy enforces `aws:MultiFactorAuthPresent: true`. Used
+  rarely: only when modifying the permission boundary, deploy role, or admin
+  role itself.
 
-- **`bonfire-base`** — IAM user whose sole permission is `sts:AssumeRole` targeting
-  `bonfire-deploy-role`. Long-lived access keys for this user live in
-  `~/.aws/credentials` as `[bonfire-base]`.
+- **`bonfire-base`** — IAM user whose sole permissions are `sts:AssumeRole`
+  targeting `bonfire-deploy-role` and `bonfire-admin-role`. Long-lived access
+  keys for this user live in `~/.aws/credentials` as `[bonfire-base]`.
+
+## Two-role model
+
+| Role | Used for | IAM access | MFA required |
+|------|----------|-----------|--------------|
+| `bonfire-deploy-role` | All routine stacks | None (blocked by boundary) | No |
+| `bonfire-admin-role` | `terraform/account/` only | Full (`AdministratorAccess`) | Yes |
+
+Use `bonfire-deploy` for day-to-day Terraform work. Switch to `bonfire-admin`
+only when you need to update the permission boundary, the deploy role, or the
+admin role itself.
 
 ## When to apply this stack
 
@@ -31,43 +46,38 @@ Apply this stack:
 
 - **First-time account setup** — before any other Terraform stack can run.
 - **Any change to the permission boundary** (`bonfire-deploy-permission-boundary`).
-- **Any change to the deploy role** — trust policy, attached policies, or the role
-  itself.
-- **Any change to the IAM delegation policy** (`bonfire-deploy-iam-delegation`).
+- **Any change to bonfire-deploy-role** — trust policy, attached policies, or the role itself.
+- **Any change to bonfire-admin-role** — trust policy, attached policies, or the role itself.
 
 All other stacks (`terraform/bot/`, `terraform/games/*`, etc.) use the
 `bonfire-deploy` profile and do not require elevated credentials.
 
 ## Chicken-and-egg problem
 
-`bonfire-deploy` cannot apply this stack because:
+Neither role can apply this stack because:
 
-1. The deploy role is *created* by this stack — it does not exist yet on first apply.
-2. Even after the role exists, changes to the permission boundary or the deploy role
-   itself require IAM permissions that the boundary explicitly blocks for the deploy
-   role.
+1. On first apply, neither role exists yet.
+2. Even after they exist, changes to the permission boundary or either role
+   require IAM permissions that `bonfire-deploy` explicitly cannot use, and
+   `bonfire-admin` cannot modify its own trust policy.
 
-This is intentional: the deploy role must never be able to modify its own constraints.
+This is intentional: the roles must never be able to modify their own
+constraints without external credentials.
 
-## How to apply
+## How to apply (initial bootstrap and updates)
 
-You need credentials with `iam:*` on the account stack resources. In order of preference:
+### Option 1: bonfire-admin profile (preferred after first apply)
 
-### Option 1: Temporarily escalate bonfire-base (preferred for post-bootstrap changes)
+Once `bonfire-admin-role` exists and you have MFA configured:
 
-If `bonfire-base` already exists and you need to update the stack:
+```bash
+AWS_PROFILE=bonfire-admin terraform apply
+```
 
-1. In the IAM console, attach an inline policy to `bonfire-base` granting `iam:*`
-   on the specific resources this stack manages (or `iam:*` on `*` for a short-lived
-   session).
-2. Run `terraform apply` using `AWS_PROFILE=bonfire-base`.
-3. Remove the inline policy immediately after apply.
+This requires an MFA token — your AWS SDK/CLI will prompt for it automatically
+if `mfa_serial` is set in your `~/.aws/config` (see [After applying](#after-applying)).
 
-This minimises the window of elevated access and avoids using root credentials.
-
-### Option 2: AWS root account
-
-Use the root account access key (or root console session) for the apply:
+### Option 2: AWS root account (first-time bootstrap only)
 
 ```bash
 export AWS_ACCESS_KEY_ID=<root-key>
@@ -81,7 +91,7 @@ unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 > Delete the root access key immediately after use. Enable MFA on root if not
 > already done (see [Root lockdown](#root-lockdown)).
 
-### Option 3: Temporary admin IAM user
+### Option 3: Temporary admin IAM user (alternative bootstrap)
 
 1. Create a temporary IAM user with `AdministratorAccess` in the console.
 2. Generate access keys for the temporary user.
@@ -116,67 +126,63 @@ aws_secret_access_key = <secret from step 1>
 role_arn       = <deploy_role_arn output from terraform>
 source_profile = bonfire-base
 region         = eu-north-1
+
+[profile bonfire-admin]
+role_arn       = <admin_role_arn output from terraform>
+source_profile = bonfire-base
+mfa_serial     = arn:aws:iam::<account-id>:mfa/bonfire-base
+region         = eu-north-1
 ```
 
-Get the `deploy_role_arn` from Terraform output:
+Get the role ARNs from Terraform output:
 ```bash
 terraform output deploy_role_arn
+terraform output admin_role_arn
 ```
 
-**4. Verify the profile works:**
+**4. Verify the deploy profile works:**
 ```bash
 aws sts get-caller-identity --profile bonfire-deploy
 ```
 
-All subsequent Terraform runs for other stacks use `AWS_PROFILE=bonfire-deploy`:
+All routine Terraform runs use `AWS_PROFILE=bonfire-deploy`:
 ```bash
 AWS_PROFILE=bonfire-deploy terraform apply
 ```
 
+**5. Verify the admin profile works (requires MFA):**
+```bash
+aws sts get-caller-identity --profile bonfire-admin
+# You will be prompted for your MFA token
+```
+
 ## Root lockdown
 
-After confirming the deploy profile works end-to-end:
+After confirming both profiles work end-to-end:
 
 1. Enable MFA on the root account (AWS Console → Security credentials → MFA).
 2. Delete root account access keys if any exist.
 
-## IAM escalation protection
+## IAM security model
 
-### Why `iam:CreateRole` is blocked by default
+### bonfire-deploy: no IAM access
 
-`bonfire-deploy-role` carries `PowerUserAccess`, which is a broad allow-all policy
-with a `NotAction` list excluding IAM and a few other sensitive services. If the role
-could freely create IAM roles and attach policies to them, it could create a new admin
-role and escalate to full account access — bypassing all intended restrictions.
+`bonfire-deploy-role` carries `PowerUserAccess` but its permission boundary
+blocks `iam:*` entirely. Even if a policy attached to the deploy role tries to
+grant IAM write access, the effective permissions are the intersection of the
+identity policy and the boundary — IAM is always denied.
 
-The permission boundary (`bonfire-deploy-permission-boundary`) enforces a hard ceiling:
-even if a policy attached to the deploy role tries to grant IAM write access, the
-effective permissions are the intersection of the identity policy and the boundary.
-`iam:CreateRole` is in the boundary's `NotAction` block, so it is denied regardless
-of what identity policies say.
+This means the deploy role cannot create roles, attach policies, or escalate
+privileges in any way. Lambda execution roles, ECS task roles, and EC2 instance
+profiles must be managed through `bonfire-admin-role` or pre-created outside
+Terraform. This is a deliberate trade-off: if a routine stack needs IAM
+resources, define them in `terraform/account/` instead.
 
-### The delegation pattern (boundary condition)
+### bonfire-admin: full IAM, MFA-gated
 
-The `bonfire-deploy-iam-delegation` policy re-opens a narrow window: the deploy role
-*can* create and manage roles, but only when the request includes:
+`bonfire-admin-role` carries `AdministratorAccess` with no permission boundary.
+The protection comes from the assume-role trust policy: MFA must be present.
+This limits usage to interactive sessions where the operator explicitly provides
+an MFA token — automated CI pipelines cannot assume this role.
 
-```
-Condition:
-  StringEquals:
-    iam:PermissionsBoundary: arn:aws:iam::<account>:policy/bonfire-deploy-permission-boundary
-```
-
-This condition is evaluated by IAM at call time. If Terraform tries to create a role
-without enforcing the boundary, the call is denied. If it creates a role with the
-boundary enforced, the new role is equally constrained — it can never do more than
-the deploy role itself.
-
-The result: the deploy role can provision Lambda execution roles, ECS task roles, and
-EC2 instance profiles as part of normal infrastructure management, but it cannot
-create a privileged role that escapes the boundary. The constraint is self-propagating.
-
-**Before modifying the boundary policy:** understand that relaxing it affects every
-role the deploy credential has ever created, not just the deploy role itself. The
-boundary ARN is hard-coded into the delegation condition, so the policy name
-`bonfire-deploy-permission-boundary` must not change without updating all dependent
-role definitions.
+Use this role sparingly. Each use should be intentional and short-lived.

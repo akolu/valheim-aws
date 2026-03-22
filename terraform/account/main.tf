@@ -4,20 +4,16 @@ locals {
     ManagedBy = "terraform"
     Purpose   = "account-hardening"
   }
-
-  # Computed ahead of time so the permission boundary policy can reference its own ARN
-  # in the IAM delegation condition without creating a circular Terraform dependency.
-  deploy_permission_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/bonfire-deploy-permission-boundary"
 }
 
 data "aws_caller_identity" "current" {}
 
-# Permission boundary: attached to bonfire-deploy-role to prevent IAM escalation.
-# The deploy role can do almost anything (PowerUserAccess) but cannot create/modify
-# IAM users, groups, or attach broad policies — stopping privilege escalation.
+# Permission boundary: attached to bonfire-deploy-role to block all IAM operations.
+# The deploy role can do almost anything (PowerUserAccess) but cannot touch IAM at all.
+# Account-level IAM changes are handled by bonfire-admin-role instead.
 resource "aws_iam_policy" "deploy_permission_boundary" {
   name        = "bonfire-deploy-permission-boundary"
-  description = "Permission boundary for bonfire-deploy-role: allows PowerUser actions but blocks IAM escalation vectors"
+  description = "Permission boundary for bonfire-deploy-role: allows PowerUser actions but blocks all IAM, Organizations, and account operations"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -26,53 +22,9 @@ resource "aws_iam_policy" "deploy_permission_boundary" {
         Sid    = "AllowPowerUserActions"
         Effect = "Allow"
         NotAction = [
-          "iam:CreateUser",
-          "iam:DeleteUser",
-          "iam:AttachUserPolicy",
-          "iam:DetachUserPolicy",
-          "iam:PutUserPolicy",
-          "iam:DeleteUserPolicy",
-          "iam:AddUserToGroup",
-          "iam:RemoveUserFromGroup",
-          "iam:CreateGroup",
-          "iam:DeleteGroup",
-          "iam:AttachGroupPolicy",
-          "iam:DetachGroupPolicy",
-          "iam:PutGroupPolicy",
-          "iam:DeleteGroupPolicy",
+          "iam:*",
           "organizations:*",
           "account:*",
-        ]
-        Resource = "*"
-      },
-      # Allow creating/modifying roles only when the same permission boundary is enforced.
-      # This lets bonfire-deploy create Lambda execution roles and EC2 instance roles
-      # without privilege escalation — any role it creates is equally constrained.
-      {
-        Sid    = "AllowScopedRoleCreationWithBoundary"
-        Effect = "Allow"
-        Action = [
-          "iam:CreateRole",
-          "iam:PutRolePolicy",
-          "iam:AttachRolePolicy",
-        ]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "iam:PermissionsBoundary" = local.deploy_permission_boundary_arn
-          }
-        }
-      },
-      # Deleting/detaching/passing a role cannot escalate privileges, so no boundary
-      # condition is required for these operations.
-      {
-        Sid    = "AllowRoleDelegationNoEscalation"
-        Effect = "Allow"
-        Action = [
-          "iam:DeleteRole",
-          "iam:DetachRolePolicy",
-          "iam:DeleteRolePolicy",
-          "iam:PassRole",
         ]
         Resource = "*"
       },
@@ -111,38 +63,26 @@ resource "aws_iam_role_policy_attachment" "deploy_power_user" {
   policy_arn = "arn:aws:iam::aws:policy/PowerUserAccess"
 }
 
-# Explicit IAM delegation policy: PowerUserAccess blocks all IAM actions via NotAction,
-# so we must explicitly grant the IAM role-management actions we need. The permission
-# boundary condition ensures any role created/modified by bonfire-deploy is equally
-# constrained — preventing privilege escalation.
-resource "aws_iam_policy" "deploy_iam_delegation" {
-  name        = "bonfire-deploy-iam-delegation"
-  description = "Grants bonfire-deploy-role scoped IAM role management, conditioned on the permission boundary being enforced"
+# Admin role for account-level changes (IAM boundaries, deploy role modifications).
+# Unlike bonfire-deploy-role, this role has full AdministratorAccess but requires MFA.
+# Used only for terraform/account/ applies — never for routine infrastructure deployments.
+resource "aws_iam_role" "admin" {
+  name        = "bonfire-admin-role"
+  description = "Role assumed by bonfire-base for account-level IAM changes; requires MFA"
 
-  policy = jsonencode({
+  assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "AllowScopedIAMDelegation"
+        Sid    = "AllowBonfireBaseToAssumeWithMFA"
         Effect = "Allow"
-        Action = [
-          "iam:CreateRole",
-          "iam:PutRolePolicy",
-          "iam:AttachRolePolicy",
-          "iam:DeleteRole",
-          "iam:DetachRolePolicy",
-          "iam:DeleteRolePolicy",
-          "iam:PassRole",
-          "iam:CreatePolicy",
-          "iam:CreatePolicyVersion",
-          "iam:DeletePolicy",
-          "iam:DeletePolicyVersion",
-          "iam:SetDefaultPolicyVersion",
-        ]
-        Resource = "*"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/bonfire-base"
+        }
+        Action = "sts:AssumeRole"
         Condition = {
-          StringEquals = {
-            "iam:PermissionsBoundary" = local.deploy_permission_boundary_arn
+          BoolIfExists = {
+            "aws:MultiFactorAuthPresent" = "true"
           }
         }
       },
@@ -152,12 +92,12 @@ resource "aws_iam_policy" "deploy_iam_delegation" {
   tags = local.tags
 }
 
-resource "aws_iam_role_policy_attachment" "deploy_iam_delegation" {
-  role       = aws_iam_role.deploy.name
-  policy_arn = aws_iam_policy.deploy_iam_delegation.arn
+resource "aws_iam_role_policy_attachment" "admin_administrator" {
+  role       = aws_iam_role.admin.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
-# Minimal IAM user whose only capability is assuming bonfire-deploy-role.
+# Minimal IAM user whose only capability is assuming bonfire-deploy-role and bonfire-admin-role.
 # Long-lived access keys for this user go in ~/.aws/credentials as [bonfire-base].
 resource "aws_iam_user" "base" {
   name = "bonfire-base"
@@ -165,8 +105,8 @@ resource "aws_iam_user" "base" {
   tags = local.tags
 }
 
-resource "aws_iam_user_policy" "base_assume_deploy" {
-  name = "bonfire-base-assume-deploy-role"
+resource "aws_iam_user_policy" "base_assume_roles" {
+  name = "bonfire-base-assume-roles"
   user = aws_iam_user.base.name
 
   policy = jsonencode({
@@ -177,6 +117,12 @@ resource "aws_iam_user_policy" "base_assume_deploy" {
         Effect   = "Allow"
         Action   = "sts:AssumeRole"
         Resource = aws_iam_role.deploy.arn
+      },
+      {
+        Sid      = "AllowAssumeAdminRole"
+        Effect   = "Allow"
+        Action   = "sts:AssumeRole"
+        Resource = aws_iam_role.admin.arn
       },
     ]
   })

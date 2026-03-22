@@ -3,6 +3,11 @@ output "deploy_role_arn" {
   value       = aws_iam_role.deploy.arn
 }
 
+output "admin_role_arn" {
+  description = "ARN of bonfire-admin-role (use as role_arn in AWS config profile with MFA)"
+  value       = aws_iam_role.admin.arn
+}
+
 output "base_user_arn" {
   description = "ARN of bonfire-base IAM user"
   value       = aws_iam_user.base.arn
