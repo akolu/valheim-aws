@@ -116,64 +116,63 @@ resource "aws_cloudwatch_log_group" "bot_lambda" {
   })
 }
 
-# API Gateway REST API
-resource "aws_api_gateway_rest_api" "bot" {
-  name        = "bonfire-bot-api"
-  description = "API Gateway for Bonfire shared Discord bot"
+# API Gateway HTTP API (v2)
+resource "aws_apigatewayv2_api" "bot" {
+  name          = "bonfire-bot-api"
+  description   = "API Gateway for Bonfire shared Discord bot"
+  protocol_type = "HTTP"
 
   tags = merge(local.tags, {
     Name = "bonfire-bot-api"
   })
 }
 
-# POST method on the root resource — Discord posts interactions to /
-resource "aws_api_gateway_method" "bot_post" {
-  rest_api_id   = aws_api_gateway_rest_api.bot.id
-  resource_id   = aws_api_gateway_rest_api.bot.root_resource_id
-  http_method   = "POST"
-  authorization = "NONE"
+# Lambda proxy integration — payload_format_version 1.0 keeps the existing
+# LambdaRequest struct in main.go working without any Lambda code changes.
+resource "aws_apigatewayv2_integration" "bot" {
+  api_id                 = aws_apigatewayv2_api.bot.id
+  integration_type       = "AWS_PROXY"
+  integration_method     = "POST"
+  integration_uri        = aws_lambda_function.bot.invoke_arn
+  payload_format_version = "1.0"
 }
 
-# Lambda proxy integration — passes the raw request body and headers to Lambda unchanged,
-# which is required for Discord's Ed25519 signature verification to work correctly.
-resource "aws_api_gateway_integration" "bot" {
-  rest_api_id             = aws_api_gateway_rest_api.bot.id
-  resource_id             = aws_api_gateway_rest_api.bot.root_resource_id
-  http_method             = aws_api_gateway_method.bot_post.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.bot.invoke_arn
+# Route — Discord posts interactions to POST /
+resource "aws_apigatewayv2_route" "bot_post" {
+  api_id    = aws_apigatewayv2_api.bot.id
+  route_key = "POST /"
+  target    = "integrations/${aws_apigatewayv2_integration.bot.id}"
 }
 
-# Deployment — triggers re-deploy whenever the method or integration changes
-resource "aws_api_gateway_deployment" "bot" {
-  rest_api_id = aws_api_gateway_rest_api.bot.id
+resource "aws_cloudwatch_log_group" "bot_api_access" {
+  name              = "/aws/apigateway/bonfire-bot-api"
+  retention_in_days = 14
 
-  depends_on = [
-    aws_api_gateway_method.bot_post,
-    aws_api_gateway_integration.bot,
-  ]
+  tags = merge(local.tags, {
+    Name = "/aws/apigateway/bonfire-bot-api"
+  })
+}
 
-  lifecycle {
-    create_before_destroy = true
+# Stage — auto_deploy eliminates the need for explicit deployment resources
+resource "aws_apigatewayv2_stage" "bot" {
+  api_id      = aws_apigatewayv2_api.bot.id
+  name        = "prod"
+  auto_deploy = true
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.bot_api_access.arn
   }
-}
-
-resource "aws_api_gateway_stage" "bot" {
-  deployment_id = aws_api_gateway_deployment.bot.id
-  rest_api_id   = aws_api_gateway_rest_api.bot.id
-  stage_name    = "prod"
 
   tags = merge(local.tags, {
     Name = "bonfire-bot-api-prod"
   })
 }
 
-# Lambda permission allowing API Gateway to invoke the function
+# Lambda permission allowing API Gateway v2 to invoke the function
 resource "aws_lambda_permission" "api_gateway" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.bot.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.bot.execution_arn}/*/*"
+  source_arn    = "${aws_apigatewayv2_api.bot.execution_arn}/*/*"
 }
