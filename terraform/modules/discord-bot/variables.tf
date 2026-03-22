@@ -27,12 +27,6 @@ variable "discord_authorized_users" {
   default     = []
 }
 
-variable "discord_authorized_roles" {
-  description = "List of Discord role IDs authorized to control the server"
-  type        = list(string)
-  default     = []
-}
-
 variable "discord_public_key" {
   description = "Discord application public key"
   type        = string

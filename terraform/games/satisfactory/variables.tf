@@ -82,12 +82,6 @@ variable "discord_authorized_users" {
   default     = []
 }
 
-variable "discord_authorized_roles" {
-  description = "Discord role IDs authorized to control the server"
-  type        = list(string)
-  default     = []
-}
-
 variable "discord_bot_zip_path" {
   description = "Path to Discord bot Lambda zip file"
   type        = string

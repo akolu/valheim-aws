@@ -93,7 +93,6 @@ module "discord_bot" {
   discord_application_id   = var.discord_application_id
   discord_bot_token        = var.discord_bot_token
   discord_authorized_users = var.discord_authorized_users
-  discord_authorized_roles = var.discord_authorized_roles
 
   tags = local.tags
 }

@@ -88,7 +88,6 @@ resource "aws_lambda_function" "discord_bot" {
 
       # Authorization
       AUTHORIZED_USERS = join(",", var.discord_authorized_users)
-      AUTHORIZED_ROLES = join(",", var.discord_authorized_roles)
 
       # Server configuration
       INSTANCE_ID = var.instance_id

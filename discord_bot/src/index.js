@@ -128,21 +128,10 @@ const handleStatusCommand = async () => {
   }
 };
 
-const isAuthorized = (userId, memberRoles) => {
-  const authorizedUsers = (process.env.AUTHORIZED_USERS || '').split(',').filter(Boolean);
-  const authorizedRoles = (process.env.AUTHORIZED_ROLES || '').split(',').filter(Boolean);
-
-  // If neither list is configured, everyone is allowed
-  if (authorizedUsers.length === 0 && authorizedRoles.length === 0) return true;
-
-  if (authorizedUsers.includes(userId)) return true;
-  if (memberRoles && authorizedRoles.some(roleId => memberRoles.includes(roleId))) return true;
-
-  return false;
-};
-
-const handleStartCommand = async (userId, memberRoles) => {
-  if (!isAuthorized(userId, memberRoles)) {
+const handleStartCommand = async (userId) => {
+  // Check if user is authorized (optional)
+  const authorizedUsers = (process.env.AUTHORIZED_USERS || '').split(',');
+  if (authorizedUsers.length > 0 && !authorizedUsers.includes(userId)) {
     return {
       type: 4,
       data: {
@@ -183,8 +172,10 @@ const handleStartCommand = async (userId, memberRoles) => {
   }
 };
 
-const handleStopCommand = async (userId, memberRoles) => {
-  if (!isAuthorized(userId, memberRoles)) {
+const handleStopCommand = async (userId) => {
+  // Check if user is authorized (optional)
+  const authorizedUsers = (process.env.AUTHORIZED_USERS || '').split(',');
+  if (authorizedUsers.length > 0 && !authorizedUsers.includes(userId)) {
     return {
       type: 4,
       data: {
@@ -248,7 +239,6 @@ const handleInteraction = async (interaction) => {
 
   const { name, options } = interaction.data;
   const userId = interaction.member?.user?.id || interaction.user?.id;
-  const memberRoles = interaction.member?.roles || [];
 
   // Command is /<game> <action> (e.g., /valheim start, /satisfactory status)
   if (name === GAME_NAME) {
@@ -263,9 +253,9 @@ const handleInteraction = async (interaction) => {
       case 'status':
         return await handleStatusCommand();
       case 'start':
-        return await handleStartCommand(userId, memberRoles);
+        return await handleStartCommand(userId);
       case 'stop':
-        return await handleStopCommand(userId, memberRoles);
+        return await handleStopCommand(userId);
       case 'help':
         return await handleHelpCommand();
       default:
