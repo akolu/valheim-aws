@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // terraformDir returns the path to the terraform workspace for a game.
@@ -136,6 +139,39 @@ func runTerraform(dir string, args ...string) error {
 		return fmt.Errorf("terraform %v: %w", args, err)
 	}
 	return nil
+}
+
+// parseTFVars parses key = "value" or key = value lines from a .tfvars file.
+func parseTFVars(path string) (map[string]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return parseTFVarsReader(f), nil
+}
+
+func parseTFVarsReader(r io.Reader) map[string]string {
+	result := make(map[string]string)
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		idx := strings.Index(line, "=")
+		if idx < 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:idx])
+		val := strings.TrimSpace(line[idx+1:])
+		// Strip surrounding quotes
+		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+			val = val[1 : len(val)-1]
+		}
+		result[key] = val
+	}
+	return result
 }
 
 // availableGames returns the list of games that have a terraform workspace.

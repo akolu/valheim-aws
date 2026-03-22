@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -44,19 +43,10 @@ func runBotUpdate(cmd *cobra.Command, args []string) error {
 	if len(args) == 1 {
 		games = []string{args[0]}
 	} else {
-		root, err := findRepoRoot()
+		var err error
+		games, err = availableGames()
 		if err != nil {
 			return err
-		}
-		gamesDir := filepath.Join(root, "terraform", "games")
-		entries, err := os.ReadDir(gamesDir)
-		if err != nil {
-			return fmt.Errorf("reading games directory: %w", err)
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				games = append(games, e.Name())
-			}
 		}
 	}
 
@@ -102,10 +92,15 @@ func botUpdateGame(client httpClient, game string) (bool, error) {
 	fmt.Printf("[%s] Updating Discord bot...\n", game)
 
 	// Get current endpoint from Terraform output
-	endpoint, err := terraformOutputRaw(dir, "discord_bot_endpoint")
+	outputs, err := terraformOutput(dir)
 	if err != nil {
 		return false, fmt.Errorf("getting terraform output discord_bot_endpoint: %w", err)
 	}
+	endpointOutput, ok := outputs["discord_bot_endpoint"]
+	if !ok {
+		return false, fmt.Errorf("terraform output discord_bot_endpoint not found — bot may not be deployed")
+	}
+	endpoint := endpointOutput.String()
 	if endpoint == "" {
 		return false, fmt.Errorf("terraform output discord_bot_endpoint is empty — bot may not be deployed")
 	}
@@ -164,39 +159,6 @@ func readDiscordCreds(dir string) (discordCreds, error) {
 	return creds, nil
 }
 
-// parseTFVars parses key = "value" or key = value lines from a .tfvars file.
-func parseTFVars(path string) (map[string]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return parseTFVarsReader(f), nil
-}
-
-func parseTFVarsReader(r io.Reader) map[string]string {
-	result := make(map[string]string)
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		idx := strings.Index(line, "=")
-		if idx < 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
-		// Strip surrounding quotes
-		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
-			val = val[1 : len(val)-1]
-		}
-		result[key] = val
-	}
-	return result
-}
-
 // parseDotEnv parses KEY=value lines from a .env file.
 func parseDotEnv(path string) (map[string]string, error) {
 	f, err := os.Open(path)
@@ -224,17 +186,6 @@ func parseDotEnv(path string) (map[string]string, error) {
 		result[key] = val
 	}
 	return result, nil
-}
-
-// terraformOutputRaw runs `terraform output -raw <name>` in dir and returns the value.
-func terraformOutputRaw(dir, name string) (string, error) {
-	cmd := exec.Command("terraform", "output", "-raw", name)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
 }
 
 // httpClient is an interface for making HTTP requests (enables testing).
@@ -316,6 +267,7 @@ type discordCommandOption struct {
 }
 
 // registerSlashCommands registers /hello and /<game> via PUT bulk endpoint.
+// First checks current commands via GET and skips the PUT if unchanged.
 func registerSlashCommands(client httpClient, creds discordCreds, game string) error {
 	commands := []discordCommand{
 		{
@@ -334,11 +286,6 @@ func registerSlashCommands(client httpClient, creds discordCreds, game string) e
 		},
 	}
 
-	payload, err := json.Marshal(commands)
-	if err != nil {
-		return err
-	}
-
 	var url string
 	if creds.guildID != "" {
 		url = fmt.Sprintf("%s/applications/%s/guilds/%s/commands", discordAPIBase, creds.applicationID, creds.guildID)
@@ -346,14 +293,53 @@ func registerSlashCommands(client httpClient, creds discordCreds, game string) e
 		url = fmt.Sprintf("%s/applications/%s/commands", discordAPIBase, creds.applicationID)
 	}
 
-	req, err := http.NewRequest("PUT", url, bytes.NewReader(payload))
+	scope := "global"
+	if creds.guildID != "" {
+		scope = "guild " + creds.guildID
+	}
+
+	// GET current commands
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bot "+creds.botToken)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("GET commands: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("GET commands: HTTP %d: %s", resp.StatusCode, body)
+	}
+
+	var current []discordCommand
+	if err := json.NewDecoder(resp.Body).Decode(&current); err != nil {
+		return fmt.Errorf("parsing GET commands response: %w", err)
+	}
+
+	if !commandsChanged(current, commands) {
+		fmt.Printf("  [%s] Slash commands unchanged — no-op (%s)\n", game, scope)
+		return nil
+	}
+
+	// PUT to update commands
+	payload, err := json.Marshal(commands)
+	if err != nil {
+		return err
+	}
+
+	req, err = http.NewRequest("PUT", url, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bot "+creds.botToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	resp, err = client.Do(req)
 	if err != nil {
 		return fmt.Errorf("PUT commands: %w", err)
 	}
@@ -364,10 +350,37 @@ func registerSlashCommands(client httpClient, creds discordCreds, game string) e
 		return fmt.Errorf("PUT commands: HTTP %d: %s", resp.StatusCode, body)
 	}
 
-	scope := "global"
-	if creds.guildID != "" {
-		scope = "guild " + creds.guildID
-	}
 	fmt.Printf("  [%s] ✓ Slash commands registered (%s)\n", game, scope)
 	return nil
+}
+
+// commandsChanged reports whether the desired commands differ from current
+// in terms of command names and subcommand option names.
+func commandsChanged(current, desired []discordCommand) bool {
+	if len(current) != len(desired) {
+		return true
+	}
+	currentByName := make(map[string]map[string]bool, len(current))
+	for _, c := range current {
+		opts := make(map[string]bool, len(c.Options))
+		for _, o := range c.Options {
+			opts[o.Name] = true
+		}
+		currentByName[c.Name] = opts
+	}
+	for _, d := range desired {
+		curOpts, ok := currentByName[d.Name]
+		if !ok {
+			return true
+		}
+		if len(curOpts) != len(d.Options) {
+			return true
+		}
+		for _, o := range d.Options {
+			if !curOpts[o.Name] {
+				return true
+			}
+		}
+	}
+	return false
 }

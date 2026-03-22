@@ -184,6 +184,9 @@ func TestUpdateInteractionEndpoint_PatchError(t *testing.T) {
 func TestRegisterSlashCommands_GuildScope(t *testing.T) {
 	client := &mockHTTPClient{
 		responses: []*http.Response{
+			// GET: no current commands → commands differ → PUT
+			{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]"))},
+			// PUT: success
 			{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]"))},
 		},
 	}
@@ -195,21 +198,28 @@ func TestRegisterSlashCommands_GuildScope(t *testing.T) {
 	if err := registerSlashCommands(client, creds, "valheim"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(client.requests) != 1 {
-		t.Fatalf("expected 1 request, got %d", len(client.requests))
+	if len(client.requests) != 2 {
+		t.Fatalf("expected 2 requests (GET + PUT), got %d", len(client.requests))
 	}
-	req := client.requests[0]
-	if req.Method != "PUT" {
-		t.Errorf("method = %q, want PUT", req.Method)
+	// GET uses guild URL
+	if !strings.Contains(client.requests[0].URL.String(), "guilds/guild-456/commands") {
+		t.Errorf("expected guild URL for GET, got %s", client.requests[0].URL)
 	}
-	if !strings.Contains(req.URL.String(), "guilds/guild-456/commands") {
-		t.Errorf("expected guild URL, got %s", req.URL)
+	// PUT uses guild URL
+	if client.requests[1].Method != "PUT" {
+		t.Errorf("second request method = %q, want PUT", client.requests[1].Method)
+	}
+	if !strings.Contains(client.requests[1].URL.String(), "guilds/guild-456/commands") {
+		t.Errorf("expected guild URL for PUT, got %s", client.requests[1].URL)
 	}
 }
 
 func TestRegisterSlashCommands_GlobalScope(t *testing.T) {
 	client := &mockHTTPClient{
 		responses: []*http.Response{
+			// GET: no current commands → commands differ → PUT
+			{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]"))},
+			// PUT: success
 			{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]"))},
 		},
 	}
@@ -221,9 +231,67 @@ func TestRegisterSlashCommands_GlobalScope(t *testing.T) {
 	if err := registerSlashCommands(client, creds, "valheim"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	req := client.requests[0]
-	if strings.Contains(req.URL.String(), "guilds") {
-		t.Errorf("expected global URL (no guild), got %s", req.URL)
+	if len(client.requests) != 2 {
+		t.Fatalf("expected 2 requests (GET + PUT), got %d", len(client.requests))
+	}
+	if strings.Contains(client.requests[1].URL.String(), "guilds") {
+		t.Errorf("expected global URL (no guild) for PUT, got %s", client.requests[1].URL)
+	}
+}
+
+// TestRegisterSlashCommands_NoOp verifies that no PUT is made when current
+// commands already match what we would register.
+func TestRegisterSlashCommands_NoOp(t *testing.T) {
+	// Build current commands matching what registerSlashCommands would register for "valheim"
+	current := []map[string]interface{}{
+		{"id": "1", "name": "hello", "description": "Check if the bot is reachable and verify your authorization status"},
+		{"id": "2", "name": "valheim", "description": "Control the valheim server", "options": []map[string]interface{}{
+			{"id": "3", "name": "status", "type": 1, "description": "Check if the valheim server is running"},
+			{"id": "4", "name": "start", "type": 1, "description": "Start the valheim server"},
+			{"id": "5", "name": "stop", "type": 1, "description": "Stop the valheim server"},
+			{"id": "6", "name": "help", "type": 1, "description": "Show available commands for the valheim server"},
+		}},
+	}
+	client := &mockHTTPClient{
+		responses: []*http.Response{
+			{StatusCode: 200, Body: jsonBody(current)},
+		},
+	}
+	creds := discordCreds{applicationID: "app-123", botToken: "tok", guildID: "guild-456"}
+	if err := registerSlashCommands(client, creds, "valheim"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Only GET, no PUT
+	if len(client.requests) != 1 {
+		t.Errorf("expected 1 request (GET only), got %d", len(client.requests))
+	}
+	if client.requests[0].Method != "GET" {
+		t.Errorf("expected GET, got %s", client.requests[0].Method)
+	}
+}
+
+// TestRegisterSlashCommands_UpdatesWhenDifferent verifies that a PUT is made
+// when current commands differ (e.g. wrong subcommands).
+func TestRegisterSlashCommands_UpdatesWhenDifferent(t *testing.T) {
+	// Only one command registered currently, missing subcommands
+	current := []map[string]interface{}{
+		{"id": "1", "name": "hello"},
+	}
+	client := &mockHTTPClient{
+		responses: []*http.Response{
+			{StatusCode: 200, Body: jsonBody(current)},
+			{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]"))},
+		},
+	}
+	creds := discordCreds{applicationID: "app-123", botToken: "tok", guildID: "guild-456"}
+	if err := registerSlashCommands(client, creds, "valheim"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(client.requests) != 2 {
+		t.Errorf("expected 2 requests (GET + PUT), got %d", len(client.requests))
+	}
+	if client.requests[1].Method != "PUT" {
+		t.Errorf("expected PUT for second request, got %s", client.requests[1].Method)
 	}
 }
 
