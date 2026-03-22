@@ -149,6 +149,18 @@ bonfire status valheim
 #   Long-term Archives: 3 snapshots, latest 2024-11-01T12:00:00Z
 ```
 
+### `bonfire completion <shell>`
+
+Generates shell completion scripts. Cobra provides this automatically.
+
+```bash
+# zsh — add to your completions directory
+bonfire completion zsh > "${fpath[1]}/_bonfire"
+
+# bash
+bonfire completion bash > /etc/bash_completion.d/bonfire
+```
+
 ### Environment Variables
 
 | Variable | Purpose | Default |
@@ -279,7 +291,7 @@ aws ssm start-session --target <instance-id>
 terraform apply --var 'allowed_ssh_cidr_blocks=["x.x.x.x/32"]'
 ```
 
-A private key file (default: `valheim-key-ec2.pem`) is created in your current directory. Remove the CIDR after the emergency by re-applying without the variable.
+A private key file (e.g. `valheim-key-ec2.pem`) is created in your current directory. Remove the CIDR after the emergency by re-applying without the variable.
 
 ## Clean Up
 
