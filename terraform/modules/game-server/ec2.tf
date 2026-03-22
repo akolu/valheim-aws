@@ -90,3 +90,22 @@ resource "aws_spot_instance_request" "game_server" {
   # Ensure instance is not terminated when spot request is cancelled
   instance_interruption_behavior = "stop"
 }
+
+# Propagate tags to the fulfilled EC2 instance (spot request tags only apply to the request, not the instance)
+resource "aws_ec2_tag" "game_server_name" {
+  resource_id = aws_spot_instance_request.game_server.spot_instance_id
+  key         = "Name"
+  value       = local.instance_name
+}
+
+resource "aws_ec2_tag" "game_server_project" {
+  resource_id = aws_spot_instance_request.game_server.spot_instance_id
+  key         = "Project"
+  value       = "bonfire"
+}
+
+resource "aws_ec2_tag" "game_server_game" {
+  resource_id = aws_spot_instance_request.game_server.spot_instance_id
+  key         = "Game"
+  value       = local.game_name
+}
