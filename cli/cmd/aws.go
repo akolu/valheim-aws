@@ -131,7 +131,19 @@ func instanceState(ctx context.Context, ec2Client ec2API, instanceID string) (st
 	return "not-found", "", nil
 }
 
-// spotInstanceState returns state for the given spot instance request.
+// spotInstanceState returns the EC2 instance state for a spot instance ID.
+//
+// Unlike instanceState, this function:
+//   - Returns the typed ec2types.InstanceStateName (not a raw string) for use in
+//     state-machine comparisons against ec2types.InstanceStateNameRunning etc.
+//   - Returns ec2types.InstanceStateNameTerminated when no reservation is found,
+//     reflecting spot-instance semantics where a missing instance means it was
+//     reclaimed and is effectively terminated.
+//   - Does NOT suppress InvalidInstanceID errors, because a fully reclaimed spot
+//     instance disappearing from the API may indicate an unexpected condition.
+//
+// Use this instead of instanceState when working with spot instances so that
+// callers receive a typed state and a correct "terminated" sentinel.
 func spotInstanceState(ctx context.Context, ec2Client ec2API, instanceID string) (ec2types.InstanceStateName, string, error) {
 	resp, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 		InstanceIds: []string{instanceID},
