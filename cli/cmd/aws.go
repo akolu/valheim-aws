@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
@@ -117,26 +116,6 @@ func instanceState(ctx context.Context, ec2Client *ec2.Client, instanceID string
 		}
 	}
 	return "not-found", "", nil
-}
-
-// spotInstanceState returns state for the given spot instance request.
-func spotInstanceState(ctx context.Context, ec2Client *ec2.Client, instanceID string) (ec2types.InstanceStateName, string, error) {
-	resp, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-		InstanceIds: []string{instanceID},
-	})
-	if err != nil {
-		return "", "", err
-	}
-	for _, r := range resp.Reservations {
-		for _, i := range r.Instances {
-			ip := ""
-			if i.PublicIpAddress != nil {
-				ip = *i.PublicIpAddress
-			}
-			return i.State.Name, ip, nil
-		}
-	}
-	return ec2types.InstanceStateNameTerminated, "", nil
 }
 
 // latestObjectByPrefix returns the lexicographically last key in a bucket with the given prefix.
