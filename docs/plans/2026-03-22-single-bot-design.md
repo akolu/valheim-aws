@@ -64,16 +64,31 @@ No raw AWS CLI interaction needed — `bonfire` is the single operator interface
 
 **Behavior:** If parameter is absent or empty → allow all users (same as current default).
 
-### Per-game Discord Guild
+### Command Registration — Global
 
-Each game can live in a different Discord server. Store guild IDs in SSM:
+Slash commands are registered globally (not per-guild). This means:
+- One `bonfire bot update` call registers all game commands everywhere the bot is invited
+- No guild ID management needed for command registration
+- Commands appear in all servers (~1 hour propagation delay for new registrations)
 
+### Guild Allowlisting — Security
+
+Anyone with the bot's OAuth URL could invite it to a foreign server. Even unauthorized invocations would pass Discord's signature verification and hit the Lambda, accruing costs and potentially enabling abuse.
+
+**Defense:** The Lambda checks `interaction.guild_id` against an SSM allowlist on every invocation. Requests from non-allowlisted guilds are rejected immediately (before any EC2 or SSM calls) with a visible "not available here" message. Discord requires HTTP 200 on all webhook responses, so rejections are returned as 200 with an ephemeral error message rather than a 4xx.
+
+Allowlist stored in SSM:
 ```
-/bonfire/valheim/guild_id       → "discord_guild_id_1"
-/bonfire/satisfactory/guild_id  → "discord_guild_id_2"
+/bonfire/allowed_guilds → "guild_id_1,guild_id_2"
 ```
 
-The Lambda uses the guild ID to scope responses if needed. Slash commands are registered per guild via `bonfire bot update`.
+Managed via the bonfire CLI:
+```bash
+bonfire bot update --add-guild guild_id_1
+bonfire bot update --remove-guild guild_id_2
+```
+
+An empty allowlist is a misconfiguration and should cause the Lambda to reject all requests (fail closed, not open).
 
 ### Terraform Workspace
 
@@ -111,6 +126,7 @@ Everything else (game name, instance ID, authorized users, guild ID) is dynamic 
 - Remove `GAME_NAME` env var — infer from interaction command name
 - Remove `INSTANCE_ID` env var — query EC2 by `tag:Game` + `tag:Project=bonfire`
 - Remove per-game `AUTHORIZED_USERS` env var — read from SSM `/bonfire/<game>/authorized_users`
+- Add guild allowlist check on every invocation — read `/bonfire/allowed_guilds`, reject if guild not in list (fail closed if list is empty)
 - Single binary handles N games without configuration changes when games are added/removed
 
 ---
@@ -119,6 +135,10 @@ Everything else (game name, instance ID, authorized users, guild ID) is dynamic 
 
 `bonfire bot update [game]` (bo-07d, already implemented) works with this architecture unchanged — it registers commands and syncs the endpoint for the single Discord app.
 
-Required enhancement: `--authorized-users` flag to write per-game authorized user lists to SSM. This is the **only** supported way to manage authorized users — no raw AWS CLI. `bonfire` is the single operator interface for all bot configuration.
+Required enhancements:
+- `--authorized-users id1,id2` — write per-game authorized user list to SSM
+- `--add-guild guild_id` / `--remove-guild guild_id` — manage the global guild allowlist in SSM
+
+`bonfire` is the **only** supported interface for bot configuration — no raw AWS CLI.
 
 `bonfire bot deploy` was explicitly deferred (YAGNI) — the single bot design makes it even less necessary since first-time setup is a one-time operation for the shared bot, not per-game.
