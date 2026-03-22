@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/spf13/cobra"
@@ -20,7 +21,8 @@ preserved; only the game server and backup bucket are destroyed.`,
 
 func runRetire(cmd *cobra.Command, args []string) error {
 	game := args[0]
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	cfg, err := awsConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("loading AWS config: %w", err)

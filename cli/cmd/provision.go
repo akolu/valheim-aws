@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/spf13/cobra"
@@ -31,7 +32,8 @@ func init() {
 
 func runProvision(cmd *cobra.Command, args []string) error {
 	game := args[0]
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	dir, err := terraformDir(game)
 	if err != nil {

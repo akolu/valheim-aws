@@ -21,7 +21,8 @@ bucket. Does NOT destroy the server. Use 'retire' to archive and destroy.`,
 
 func runArchive(cmd *cobra.Command, args []string) error {
 	game := args[0]
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	cfg, err := awsConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("loading AWS config: %w", err)
