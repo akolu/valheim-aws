@@ -72,6 +72,12 @@ resource "aws_iam_policy" "bot_lambda" {
         Action = ["ssm:GetParameter"]
         Resource = "arn:aws:ssm:*:*:parameter/bonfire/*"
       },
+      {
+        Sid    = "DLQSend"
+        Effect = "Allow"
+        Action = ["sqs:SendMessage"]
+        Resource = aws_sqs_queue.bot_dlq.arn
+      },
     ]
   })
 }
@@ -79,6 +85,15 @@ resource "aws_iam_policy" "bot_lambda" {
 resource "aws_iam_role_policy_attachment" "bot_lambda" {
   role       = aws_iam_role.bot_lambda.name
   policy_arn = aws_iam_policy.bot_lambda.arn
+}
+
+# Dead letter queue for failed Lambda invocations
+resource "aws_sqs_queue" "bot_dlq" {
+  name = "bonfire_bot_dlq"
+
+  tags = merge(local.tags, {
+    Name = "bonfire_bot_dlq"
+  })
 }
 
 # Lambda function — single Go binary handling all games
@@ -100,6 +115,10 @@ resource "aws_lambda_function" "bot" {
       DISCORD_PUBLIC_KEY = var.discord_public_key
       AWS_REGION         = var.aws_region
     }
+  }
+
+  dead_letter_config {
+    target_arn = aws_sqs_queue.bot_dlq.arn
   }
 
   tags = merge(local.tags, {
@@ -161,6 +180,11 @@ resource "aws_apigatewayv2_stage" "bot" {
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.bot_api_access.arn
+  }
+
+  default_route_settings {
+    throttling_rate_limit  = 10
+    throttling_burst_limit = 5
   }
 
   tags = merge(local.tags, {
