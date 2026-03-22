@@ -3,14 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
@@ -48,7 +46,6 @@ func longtermBucketName(game string) string {
 type s3API interface {
 	s3.ListObjectsV2APIClient
 	CopyObject(ctx context.Context, params *s3.CopyObjectInput, optFns ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
-	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 }
 
 // ec2API is the subset of the EC2 client API used by this package.
@@ -90,22 +87,6 @@ func copyObject(ctx context.Context, s3Client s3API, srcBucket, srcKey, dstBucke
 	return nil
 }
 
-// getObject downloads an S3 object and writes it to w.
-func getObject(ctx context.Context, s3Client s3API, bucket, key string, w io.Writer) error {
-	resp, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
-	if err != nil {
-		return fmt.Errorf("getting s3://%s/%s: %w", bucket, key, err)
-	}
-	defer resp.Body.Close()
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		return fmt.Errorf("reading s3://%s/%s: %w", bucket, key, err)
-	}
-	return nil
-}
-
 // instanceState returns the EC2 instance state for the given instance ID.
 // Returns empty string if not found.
 func instanceState(ctx context.Context, ec2Client ec2API, instanceID string) (string, string, error) {
@@ -133,38 +114,6 @@ func instanceState(ctx context.Context, ec2Client ec2API, instanceID string) (st
 		}
 	}
 	return "not-found", "", nil
-}
-
-// spotInstanceState returns the EC2 instance state for a spot instance ID.
-//
-// Unlike instanceState, this function:
-//   - Returns the typed ec2types.InstanceStateName (not a raw string) for use in
-//     state-machine comparisons against ec2types.InstanceStateNameRunning etc.
-//   - Returns ec2types.InstanceStateNameTerminated when no reservation is found,
-//     reflecting spot-instance semantics where a missing instance means it was
-//     reclaimed and is effectively terminated.
-//   - Does NOT suppress InvalidInstanceID errors, because a fully reclaimed spot
-//     instance disappearing from the API may indicate an unexpected condition.
-//
-// Use this instead of instanceState when working with spot instances so that
-// callers receive a typed state and a correct "terminated" sentinel.
-func spotInstanceState(ctx context.Context, ec2Client ec2API, instanceID string) (ec2types.InstanceStateName, string, error) {
-	resp, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-		InstanceIds: []string{instanceID},
-	})
-	if err != nil {
-		return "", "", err
-	}
-	for _, r := range resp.Reservations {
-		for _, i := range r.Instances {
-			ip := ""
-			if i.PublicIpAddress != nil {
-				ip = *i.PublicIpAddress
-			}
-			return i.State.Name, ip, nil
-		}
-	}
-	return ec2types.InstanceStateNameTerminated, "", nil
 }
 
 // listCommonPrefixes returns top-level "directory" prefixes in an S3 bucket by listing

@@ -74,6 +74,13 @@ func TestAvailableGames(t *testing.T) {
 	}
 }
 
+func TestParseTFVars_FileNotFound(t *testing.T) {
+	_, err := parseTFVars("/nonexistent/path/that/does/not/exist.tfvars")
+	if err == nil {
+		t.Fatal("parseTFVars() expected error for non-existent file, got nil")
+	}
+}
+
 func TestBucketNames(t *testing.T) {
 	tests := []struct {
 		game    string

@@ -34,6 +34,77 @@ func jsonBody(v interface{}) io.ReadCloser {
 	return io.NopCloser(strings.NewReader(string(b)))
 }
 
+// --- commandsChanged tests ---
+
+func TestCommandsChanged_Identical(t *testing.T) {
+	cmds := []discordCommand{
+		{Name: "valheim", Description: "Control the valheim server", Options: []discordCommandOption{
+			{Name: "status", Description: "Check if the valheim server is running", Type: 1},
+		}},
+	}
+	if commandsChanged(cmds, cmds) {
+		t.Error("identical commands should not be changed")
+	}
+}
+
+func TestCommandsChanged_DifferentOrder(t *testing.T) {
+	a := []discordCommand{
+		{Name: "valheim", Description: "desc", Options: []discordCommandOption{{Name: "status", Description: "d1", Type: 1}}},
+		{Name: "minecraft", Description: "desc2", Options: []discordCommandOption{{Name: "start", Description: "d2", Type: 1}}},
+	}
+	// desired in reverse order — structurally the same set
+	b := []discordCommand{
+		{Name: "minecraft", Description: "desc2", Options: []discordCommandOption{{Name: "start", Description: "d2", Type: 1}}},
+		{Name: "valheim", Description: "desc", Options: []discordCommandOption{{Name: "status", Description: "d1", Type: 1}}},
+	}
+	if commandsChanged(a, b) {
+		t.Error("same commands in different order should not be changed")
+	}
+}
+
+func TestCommandsChanged_CommandDescriptionChange(t *testing.T) {
+	current := []discordCommand{
+		{Name: "valheim", Description: "Old description", Options: []discordCommandOption{
+			{Name: "status", Description: "Check status", Type: 1},
+		}},
+	}
+	desired := []discordCommand{
+		{Name: "valheim", Description: "New description", Options: []discordCommandOption{
+			{Name: "status", Description: "Check status", Type: 1},
+		}},
+	}
+	if !commandsChanged(current, desired) {
+		t.Error("command description change should be detected")
+	}
+}
+
+func TestCommandsChanged_OptionDescriptionChange(t *testing.T) {
+	current := []discordCommand{
+		{Name: "valheim", Description: "desc", Options: []discordCommandOption{
+			{Name: "status", Description: "Old option description", Type: 1},
+		}},
+	}
+	desired := []discordCommand{
+		{Name: "valheim", Description: "desc", Options: []discordCommandOption{
+			{Name: "status", Description: "New option description", Type: 1},
+		}},
+	}
+	if !commandsChanged(current, desired) {
+		t.Error("option description change should be detected")
+	}
+}
+
+func TestCommandsChanged_AddedCommand(t *testing.T) {
+	current := []discordCommand{{Name: "valheim", Description: "desc"}}
+	desired := []discordCommand{
+		{Name: "valheim", Description: "desc"},
+		{Name: "minecraft", Description: "desc2"},
+	}
+	if !commandsChanged(current, desired) {
+		t.Error("added command should be detected")
+	}
+}
+
 // --- parseTFVarsReader tests ---
 
 func TestParseTFVarsReader_BasicValues(t *testing.T) {

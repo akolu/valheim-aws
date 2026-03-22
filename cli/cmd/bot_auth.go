@@ -54,10 +54,19 @@ func init() {
 	botCmd.AddCommand(botUntrustCmd)
 }
 
-func runBotGrant(cmd *cobra.Command, args []string) error {
+// botSSMClient checks bot deployment and returns an SSM client.
+func botSSMClient(ctx context.Context) (*ssm.Client, error) {
 	if err := checkBotDeployed(); err != nil {
-		return err
+		return nil, err
 	}
+	cfg, err := awsConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ssm.NewFromConfig(cfg), nil
+}
+
+func runBotGrant(cmd *cobra.Command, args []string) error {
 	game, userID := args[0], args[1]
 	if err := validateGameName(game); err != nil {
 		return err
@@ -66,21 +75,16 @@ func runBotGrant(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	ctx := context.Background()
-	cfg, err := awsConfig(ctx)
+	client, err := botSSMClient(ctx)
 	if err != nil {
 		return err
 	}
-	client := ssm.NewFromConfig(cfg)
-	paramPath := fmt.Sprintf("/bonfire/%s/authorized_users", game)
-	return ssmListAdd(ctx, client, paramPath, userID, func(n int) {
+	return ssmListAdd(ctx, client, fmt.Sprintf("/bonfire/%s/authorized_users", game), userID, func(n int) {
 		fmt.Printf("✓ granted user %s access to %s (%d users total)\n", userID, game, n)
 	})
 }
 
 func runBotRevoke(cmd *cobra.Command, args []string) error {
-	if err := checkBotDeployed(); err != nil {
-		return err
-	}
 	game, userID := args[0], args[1]
 	if err := validateGameName(game); err != nil {
 		return err
@@ -89,50 +93,40 @@ func runBotRevoke(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	ctx := context.Background()
-	cfg, err := awsConfig(ctx)
+	client, err := botSSMClient(ctx)
 	if err != nil {
 		return err
 	}
-	client := ssm.NewFromConfig(cfg)
-	paramPath := fmt.Sprintf("/bonfire/%s/authorized_users", game)
-	return ssmListRemove(ctx, client, paramPath, userID, func(n int) {
+	return ssmListRemove(ctx, client, fmt.Sprintf("/bonfire/%s/authorized_users", game), userID, func(n int) {
 		fmt.Printf("✓ revoked user %s access to %s (%d users total)\n", userID, game, n)
 	})
 }
 
 func runBotTrust(cmd *cobra.Command, args []string) error {
-	if err := checkBotDeployed(); err != nil {
-		return err
-	}
 	guildID := args[0]
 	if err := validateDiscordID(guildID, "guild_id"); err != nil {
 		return err
 	}
 	ctx := context.Background()
-	cfg, err := awsConfig(ctx)
+	client, err := botSSMClient(ctx)
 	if err != nil {
 		return err
 	}
-	client := ssm.NewFromConfig(cfg)
 	return ssmListAdd(ctx, client, "/bonfire/allowed_guilds", guildID, func(n int) {
 		fmt.Printf("✓ trusted guild %s (%d guilds total)\n", guildID, n)
 	})
 }
 
 func runBotUntrust(cmd *cobra.Command, args []string) error {
-	if err := checkBotDeployed(); err != nil {
-		return err
-	}
 	guildID := args[0]
 	if err := validateDiscordID(guildID, "guild_id"); err != nil {
 		return err
 	}
 	ctx := context.Background()
-	cfg, err := awsConfig(ctx)
+	client, err := botSSMClient(ctx)
 	if err != nil {
 		return err
 	}
-	client := ssm.NewFromConfig(cfg)
 	return ssmListRemove(ctx, client, "/bonfire/allowed_guilds", guildID, func(n int) {
 		fmt.Printf("✓ untrusted guild %s (%d guilds total)\n", guildID, n)
 	})

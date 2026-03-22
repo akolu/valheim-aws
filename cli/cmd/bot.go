@@ -269,29 +269,33 @@ func registerAllCommands(client httpClient, creds discordCreds, games []string) 
 }
 
 // commandsChanged reports whether the desired commands differ from current
-// in terms of command names and subcommand option names.
+// in terms of command names, descriptions, and subcommand option names and descriptions.
 func commandsChanged(current, desired []discordCommand) bool {
 	if len(current) != len(desired) {
 		return true
 	}
-	currentByName := make(map[string]map[string]bool, len(current))
+	currentByName := make(map[string]discordCommand, len(current))
 	for _, c := range current {
-		opts := make(map[string]bool, len(c.Options))
-		for _, o := range c.Options {
-			opts[o.Name] = true
-		}
-		currentByName[c.Name] = opts
+		currentByName[c.Name] = c
 	}
 	for _, d := range desired {
-		curOpts, ok := currentByName[d.Name]
+		cur, ok := currentByName[d.Name]
 		if !ok {
 			return true
 		}
-		if len(curOpts) != len(d.Options) {
+		if cur.Description != d.Description {
 			return true
 		}
+		if len(cur.Options) != len(d.Options) {
+			return true
+		}
+		curOptsByName := make(map[string]discordCommandOption, len(cur.Options))
+		for _, o := range cur.Options {
+			curOptsByName[o.Name] = o
+		}
 		for _, o := range d.Options {
-			if !curOpts[o.Name] {
+			curOpt, found := curOptsByName[o.Name]
+			if !found || curOpt.Description != o.Description {
 				return true
 			}
 		}

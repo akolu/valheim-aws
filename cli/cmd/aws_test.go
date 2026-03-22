@@ -3,8 +3,6 @@ package cmd
 import (
 	"context"
 	"errors"
-	"io"
-	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -18,7 +16,6 @@ import (
 type mockS3 struct {
 	listFunc func(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
 	copyFunc func(ctx context.Context, params *s3.CopyObjectInput, optFns ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
-	getFunc  func(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 }
 
 func (m *mockS3) ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
@@ -33,13 +30,6 @@ func (m *mockS3) CopyObject(ctx context.Context, params *s3.CopyObjectInput, opt
 		return m.copyFunc(ctx, params, optFns...)
 	}
 	return &s3.CopyObjectOutput{}, nil
-}
-
-func (m *mockS3) GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
-	if m.getFunc != nil {
-		return m.getFunc(ctx, params, optFns...)
-	}
-	return &s3.GetObjectOutput{Body: io.NopCloser(strings.NewReader(""))}, nil
 }
 
 // mockEC2 implements ec2API for testing.
@@ -133,37 +123,6 @@ func TestCopyObject_Error(t *testing.T) {
 	}
 }
 
-// --- getObject tests ---
-
-func TestGetObject_Success(t *testing.T) {
-	content := "save file contents"
-	client := &mockS3{
-		getFunc: func(_ context.Context, _ *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
-			return &s3.GetObjectOutput{Body: io.NopCloser(strings.NewReader(content))}, nil
-		},
-	}
-	var buf strings.Builder
-	err := getObject(context.Background(), client, "bucket", "save.zip", &buf)
-	if err != nil {
-		t.Fatalf("getObject() error: %v", err)
-	}
-	if buf.String() != content {
-		t.Errorf("getObject() wrote %q, want %q", buf.String(), content)
-	}
-}
-
-func TestGetObject_Error(t *testing.T) {
-	client := &mockS3{
-		getFunc: func(_ context.Context, _ *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
-			return nil, errors.New("NoSuchKey")
-		},
-	}
-	err := getObject(context.Background(), client, "bucket", "missing.zip", io.Discard)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-}
-
 // --- instanceState tests ---
 
 func TestInstanceState_EmptyID(t *testing.T) {
@@ -232,60 +191,6 @@ func TestInstanceState_NoInstances(t *testing.T) {
 	}
 	if state != "not-found" {
 		t.Errorf("state = %q, want %q", state, "not-found")
-	}
-}
-
-// --- spotInstanceState tests ---
-
-func TestSpotInstanceState_Running(t *testing.T) {
-	client := &mockEC2{
-		describeFunc: func(_ context.Context, _ *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
-			return &ec2.DescribeInstancesOutput{
-				Reservations: []ec2types.Reservation{
-					{
-						Instances: []ec2types.Instance{
-							{
-								State:           &ec2types.InstanceState{Name: ec2types.InstanceStateNameRunning},
-								PublicIpAddress: aws.String("5.6.7.8"),
-							},
-						},
-					},
-				},
-			}, nil
-		},
-	}
-	stateName, ip, err := spotInstanceState(context.Background(), client, "i-spot")
-	if err != nil {
-		t.Fatalf("spotInstanceState() error: %v", err)
-	}
-	if stateName != ec2types.InstanceStateNameRunning {
-		t.Errorf("state = %q, want %q", stateName, ec2types.InstanceStateNameRunning)
-	}
-	if ip != "5.6.7.8" {
-		t.Errorf("ip = %q, want %q", ip, "5.6.7.8")
-	}
-}
-
-func TestSpotInstanceState_NoInstances(t *testing.T) {
-	client := &mockEC2{} // empty response
-	stateName, _, err := spotInstanceState(context.Background(), client, "i-none")
-	if err != nil {
-		t.Fatalf("spotInstanceState() error: %v", err)
-	}
-	if stateName != ec2types.InstanceStateNameTerminated {
-		t.Errorf("state = %q, want %q", stateName, ec2types.InstanceStateNameTerminated)
-	}
-}
-
-func TestSpotInstanceState_Error(t *testing.T) {
-	client := &mockEC2{
-		describeFunc: func(_ context.Context, _ *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
-			return nil, errors.New("RequestExpired")
-		},
-	}
-	_, _, err := spotInstanceState(context.Background(), client, "i-err")
-	if err == nil {
-		t.Fatal("expected error, got nil")
 	}
 }
 

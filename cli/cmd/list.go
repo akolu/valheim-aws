@@ -6,9 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/spf13/cobra"
 )
 
@@ -48,41 +46,19 @@ func runList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// gameInstanceInfo queries EC2 for the instance associated with a game workspace
-// by looking up instances tagged with tag:Game=<game> and tag:Project=bonfire.
-func gameInstanceInfo(ctx context.Context, ec2Client ec2API, game string) (string, string) {
-	resp, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-		Filters: []ec2types.Filter{
-			{
-				Name:   aws.String("tag:Game"),
-				Values: []string{game},
-			},
-			{
-				Name:   aws.String("tag:Project"),
-				Values: []string{"bonfire"},
-			},
-		},
-	})
+// gameInstanceInfo queries EC2 for the instance associated with a game workspace.
+// Errors are written to stderr; the returned ip uses "-" when not available.
+func gameInstanceInfo(ctx context.Context, ec2Client ec2API, game string) (state, ip string) {
+	_, state, ip, err := describeGameInstance(ctx, ec2Client, game)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error querying EC2 for game %s: %v\n", game, err)
 		return "error", "-"
 	}
-
-	for _, r := range resp.Reservations {
-		for _, i := range r.Instances {
-			if i.State != nil && i.State.Name == ec2types.InstanceStateNameTerminated {
-				continue
-			}
-			state := "unknown"
-			if i.State != nil {
-				state = string(i.State.Name)
-			}
-			ip := "-"
-			if i.PublicIpAddress != nil {
-				ip = *i.PublicIpAddress
-			}
-			return state, ip
-		}
+	if state == "" {
+		return "not-provisioned", "-"
 	}
-	return "not-provisioned", "-"
+	if ip == "-" || ip == "" {
+		ip = "-"
+	}
+	return state, ip
 }

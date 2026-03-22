@@ -200,6 +200,29 @@ Commands that talk to AWS directly (`list`, `status`) need a narrower set:
 }
 ```
 
+### Discord Bot IAM Permissions
+
+The `bot grant`, `bot revoke`, `bot trust`, and `bot untrust` commands read and write SSM Parameter Store directly and need:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:PutParameter",
+        "ssm:DeleteParameter"
+      ],
+      "Resource": [
+        "arn:aws:ssm:*:*:parameter/bonfire/*"
+      ]
+    }
+  ]
+}
+```
+
 ## Discord Bot
 
 A serverless Discord bot lets your play group control the game server from Discord. Implemented with AWS Lambda and API Gateway.
