@@ -19,5 +19,5 @@ clean:
 	rm -f $(BUILD_DIR)/$(BINARY) $(BUILD_DIR)/$(ALIAS)
 
 install:
-	go install .
+	go build -o $(GOBIN)/$(BINARY) .
 	ln -sf $(GOBIN)/$(BINARY) $(GOBIN)/$(ALIAS)
