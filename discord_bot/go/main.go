@@ -316,6 +316,9 @@ func handleStopCommand(ctx context.Context, ec2Client EC2API, ssmClient SSMAPI, 
 	if info.State == "multiple" {
 		return ephemeralResponse(fmt.Sprintf("Multiple instances found for %s — ambiguous.", gameName))
 	}
+	if info.State == "stopped" || info.State == "stopping" {
+		return publicResponse("Server is already stopped.")
+	}
 	if err := stopInstance(ctx, ec2Client, info.InstanceID); err != nil {
 		return publicResponse(fmt.Sprintf("Error stopping server: %v", err))
 	}

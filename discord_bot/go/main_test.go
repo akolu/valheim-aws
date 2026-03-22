@@ -102,6 +102,22 @@ func stoppedInstanceWithID(id string) *ec2.DescribeInstancesOutput {
 	}
 }
 
+func stoppingInstanceWithID(id string) *ec2.DescribeInstancesOutput {
+	return &ec2.DescribeInstancesOutput{
+		Reservations: []ec2types.Reservation{
+			{
+				Instances: []ec2types.Instance{
+					{
+						InstanceId:   aws.String(id),
+						State:        &ec2types.InstanceState{Name: ec2types.InstanceStateNameStopping},
+						InstanceType: ec2types.InstanceTypeT2Micro,
+					},
+				},
+			},
+		},
+	}
+}
+
 func twoInstancesOutput() *ec2.DescribeInstancesOutput {
 	return &ec2.DescribeInstancesOutput{
 		Reservations: []ec2types.Reservation{
@@ -607,16 +623,46 @@ func TestHandleInteraction_StopUnauthorized(t *testing.T) {
 
 func TestHandleInteraction_StopAuthorized(t *testing.T) {
 	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
-	mock := &mockEC2Client{describeOutput: stoppedInstanceWithID("i-test")}
+	mock := &mockEC2Client{describeOutput: runningInstanceWithID("i-test", "1.2.3.4")}
 
 	resp := handleInteraction(context.Background(), interactionWith("mc", "stop", "admin", "g1"), mock, ssmClient)
 
 	if !mock.stopCalled {
-		t.Error("StopInstances should be called for authorized user")
+		t.Error("StopInstances should be called for authorized user stopping running server")
 	}
 	ir := parseInteractionResponse(t, resp)
 	if ir.Data == nil || !strings.Contains(ir.Data.Content, "stopping") {
 		t.Errorf("expected 'stopping' message, got: %v", ir.Data)
+	}
+}
+
+func TestHandleInteraction_StopAuthorized_AlreadyStopped(t *testing.T) {
+	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
+	mock := &mockEC2Client{describeOutput: stoppedInstanceWithID("i-test")}
+
+	resp := handleInteraction(context.Background(), interactionWith("mc", "stop", "admin", "g1"), mock, ssmClient)
+
+	ir := parseInteractionResponse(t, resp)
+	if ir.Data == nil || !strings.Contains(ir.Data.Content, "already stopped") {
+		t.Errorf("expected 'already stopped' message, got: %v", ir.Data)
+	}
+	if mock.stopCalled {
+		t.Error("StopInstances should not be called when server is already stopped")
+	}
+}
+
+func TestHandleInteraction_StopAuthorized_AlreadyStopping(t *testing.T) {
+	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
+	mock := &mockEC2Client{describeOutput: stoppingInstanceWithID("i-test")}
+
+	resp := handleInteraction(context.Background(), interactionWith("mc", "stop", "admin", "g1"), mock, ssmClient)
+
+	ir := parseInteractionResponse(t, resp)
+	if ir.Data == nil || !strings.Contains(ir.Data.Content, "already stopped") {
+		t.Errorf("expected 'already stopped' message, got: %v", ir.Data)
+	}
+	if mock.stopCalled {
+		t.Error("StopInstances should not be called when server is already stopping")
 	}
 }
 
@@ -757,7 +803,7 @@ func TestHandleInteraction_NonSlashCommand(t *testing.T) {
 
 func TestHandleInteraction_MemberUserFallback(t *testing.T) {
 	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
-	mock := &mockEC2Client{describeOutput: stoppedInstanceWithID("i-test")}
+	mock := &mockEC2Client{describeOutput: runningInstanceWithID("i-test", "1.2.3.4")}
 
 	interaction := Interaction{
 		Type:    2,
