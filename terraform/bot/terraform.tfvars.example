@@ -1,0 +1,8 @@
+# AWS region where the bot Lambda and API Gateway are deployed
+aws_region = "eu-north-1"
+
+# Discord application credentials — obtain from the Discord Developer Portal
+# https://discord.com/developers/applications
+discord_public_key     = "your_discord_app_public_key_here"
+discord_application_id = "your_discord_application_id_here"
+discord_bot_token      = "your_discord_bot_token_here"

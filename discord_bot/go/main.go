@@ -13,8 +13,11 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
 // EC2API is the interface for EC2 operations used by this bot.
@@ -23,6 +26,11 @@ type EC2API interface {
 	DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
 	StartInstances(ctx context.Context, params *ec2.StartInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error)
 	StopInstances(ctx context.Context, params *ec2.StopInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error)
+}
+
+// SSMAPI is the interface for SSM operations used by this bot.
+type SSMAPI interface {
+	GetParameter(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error)
 }
 
 // Lambda proxy request/response types
@@ -39,10 +47,11 @@ type LambdaResponse struct {
 
 // Discord interaction types
 type Interaction struct {
-	Type   int             `json:"type"`
-	Data   InteractionData `json:"data"`
-	Member *Member         `json:"member"`
-	User   *User           `json:"user"`
+	Type    int             `json:"type"`
+	GuildID string          `json:"guild_id"`
+	Data    InteractionData `json:"data"`
+	Member  *Member         `json:"member"`
+	User    *User           `json:"user"`
 }
 
 type Member struct {
@@ -109,29 +118,109 @@ func newEC2Client(ctx context.Context) (*ec2.Client, error) {
 	return ec2.NewFromConfig(cfg), nil
 }
 
+func newSSMClient(ctx context.Context) (*ssm.Client, error) {
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = "eu-north-1"
+	}
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return nil, err
+	}
+	return ssm.NewFromConfig(cfg), nil
+}
+
+// getSSMParam reads an SSM parameter; returns "" if the parameter does not exist.
+func getSSMParam(ctx context.Context, client SSMAPI, name string) (string, error) {
+	out, err := client.GetParameter(ctx, &ssm.GetParameterInput{
+		Name: aws.String(name),
+	})
+	if err != nil {
+		// Treat ParameterNotFound as an absent value, not an error
+		if strings.Contains(err.Error(), "ParameterNotFound") {
+			return "", nil
+		}
+		return "", err
+	}
+	if out.Parameter == nil || out.Parameter.Value == nil {
+		return "", nil
+	}
+	return *out.Parameter.Value, nil
+}
+
+// checkGuildAllowlist checks whether guildID is in the /bonfire/allowed_guilds SSM list.
+// An empty list or absent parameter fails closed (returns false).
+func checkGuildAllowlist(ctx context.Context, guildID string, ssmClient SSMAPI) bool {
+	raw, err := getSSMParam(ctx, ssmClient, "/bonfire/allowed_guilds")
+	if err != nil || raw == "" {
+		return false
+	}
+	for _, id := range strings.Split(raw, ",") {
+		if strings.TrimSpace(id) == guildID {
+			return true
+		}
+	}
+	return false
+}
+
+// isAuthorizedSSM checks whether userID is in the /bonfire/<game>/authorized_users SSM list.
+// An empty or absent parameter denies all (fail closed), matching prior AUTHORIZED_USERS behavior.
+func isAuthorizedSSM(ctx context.Context, userID, game string, ssmClient SSMAPI) bool {
+	raw, err := getSSMParam(ctx, ssmClient, "/bonfire/"+game+"/authorized_users")
+	if err != nil || raw == "" {
+		return false
+	}
+	for _, uid := range strings.Split(raw, ",") {
+		if strings.TrimSpace(uid) == userID {
+			return true
+		}
+	}
+	return false
+}
+
 type instanceInfo struct {
+	InstanceID   string
 	State        string
 	PublicIP     string
 	InstanceType string
 	LaunchTime   *time.Time
 }
 
-func getInstanceState(ctx context.Context, client EC2API) (instanceInfo, error) {
-	instanceID := os.Getenv("INSTANCE_ID")
+// findInstanceByGame discovers the EC2 instance for a game via tag:Game and tag:Project=bonfire.
+// Returns State "not_found" if none match, "multiple" if more than one matches.
+// Terminated instances are excluded.
+func findInstanceByGame(ctx context.Context, client EC2API, game string) (instanceInfo, error) {
 	out, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-		InstanceIds: []string{instanceID},
+		Filters: []ec2types.Filter{
+			{Name: aws.String("tag:Game"), Values: []string{game}},
+			{Name: aws.String("tag:Project"), Values: []string{"bonfire"}},
+			{Name: aws.String("instance-state-name"), Values: []string{"pending", "running", "stopping", "stopped"}},
+		},
 	})
 	if err != nil {
 		return instanceInfo{}, err
 	}
-	if len(out.Reservations) == 0 || len(out.Reservations[0].Instances) == 0 {
+
+	var instances []ec2types.Instance
+	for _, r := range out.Reservations {
+		instances = append(instances, r.Instances...)
+	}
+
+	if len(instances) == 0 {
 		return instanceInfo{State: "not_found"}, nil
 	}
-	inst := out.Reservations[0].Instances[0]
+	if len(instances) > 1 {
+		return instanceInfo{State: "multiple"}, nil
+	}
+
+	inst := instances[0]
 	info := instanceInfo{
 		State:        string(inst.State.Name),
 		InstanceType: string(inst.InstanceType),
 		LaunchTime:   inst.LaunchTime,
+	}
+	if inst.InstanceId != nil {
+		info.InstanceID = *inst.InstanceId
 	}
 	if inst.PublicIpAddress != nil {
 		info.PublicIP = *inst.PublicIpAddress
@@ -141,33 +230,18 @@ func getInstanceState(ctx context.Context, client EC2API) (instanceInfo, error) 
 	return info, nil
 }
 
-func startInstance(ctx context.Context, client EC2API) error {
+func startInstance(ctx context.Context, client EC2API, instanceID string) error {
 	_, err := client.StartInstances(ctx, &ec2.StartInstancesInput{
-		InstanceIds: []string{os.Getenv("INSTANCE_ID")},
+		InstanceIds: []string{instanceID},
 	})
 	return err
 }
 
-func stopInstance(ctx context.Context, client EC2API) error {
+func stopInstance(ctx context.Context, client EC2API, instanceID string) error {
 	_, err := client.StopInstances(ctx, &ec2.StopInstancesInput{
-		InstanceIds: []string{os.Getenv("INSTANCE_ID")},
+		InstanceIds: []string{instanceID},
 	})
 	return err
-}
-
-func isAuthorized(userID string) bool {
-	// Matches original JS behavior: empty AUTHORIZED_USERS denies all
-	// JS: ''.split(',') = [''] → length > 0, guard fires → everyone denied
-	raw := os.Getenv("AUTHORIZED_USERS")
-	if raw == "" {
-		return false
-	}
-	for _, uid := range strings.Split(raw, ",") {
-		if strings.TrimSpace(uid) == userID {
-			return true
-		}
-	}
-	return false
 }
 
 func ephemeralResponse(content string) InteractionResponse {
@@ -184,13 +258,16 @@ func publicResponse(content string) InteractionResponse {
 	}
 }
 
-func handleStatusCommand(ctx context.Context, client EC2API) InteractionResponse {
-	info, err := getInstanceState(ctx, client)
+func handleStatusCommand(ctx context.Context, client EC2API, gameName string) InteractionResponse {
+	info, err := findInstanceByGame(ctx, client, gameName)
 	if err != nil {
 		return ephemeralResponse(fmt.Sprintf("Error checking server status: %v", err))
 	}
 	if info.State == "not_found" {
-		return ephemeralResponse("Server instance not found. Please check your configuration.")
+		return ephemeralResponse(fmt.Sprintf("No server found for %s.", gameName))
+	}
+	if info.State == "multiple" {
+		return ephemeralResponse(fmt.Sprintf("Multiple instances found for %s — ambiguous.", gameName))
 	}
 	msg := fmt.Sprintf("Server is currently **%s**\n", info.State)
 	if info.State == "running" && info.LaunchTime != nil {
@@ -202,56 +279,74 @@ func handleStatusCommand(ctx context.Context, client EC2API) InteractionResponse
 	return ephemeralResponse(msg)
 }
 
-func handleStartCommand(ctx context.Context, client EC2API, userID string) InteractionResponse {
-	if !isAuthorized(userID) {
+func handleStartCommand(ctx context.Context, ec2Client EC2API, ssmClient SSMAPI, userID, gameName string) InteractionResponse {
+	if !isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
 		return publicResponse("Sorry, you don't have permission to start the server.")
 	}
-	info, err := getInstanceState(ctx, client)
+	info, err := findInstanceByGame(ctx, ec2Client, gameName)
 	if err != nil {
 		return publicResponse(fmt.Sprintf("Error starting server: %v", err))
+	}
+	if info.State == "not_found" {
+		return ephemeralResponse(fmt.Sprintf("No server found for %s.", gameName))
+	}
+	if info.State == "multiple" {
+		return ephemeralResponse(fmt.Sprintf("Multiple instances found for %s — ambiguous.", gameName))
 	}
 	if info.State == "running" {
 		return publicResponse(fmt.Sprintf("Server is already running.\n🖥️ **IP Address**: %s", info.PublicIP))
 	}
-	if err := startInstance(ctx, client); err != nil {
+	if err := startInstance(ctx, ec2Client, info.InstanceID); err != nil {
 		return publicResponse(fmt.Sprintf("Error starting server: %v", err))
 	}
 	return publicResponse("Server is starting. It will take approximately 2-3 minutes to be available.")
 }
 
-func handleStopCommand(ctx context.Context, client EC2API, userID string) InteractionResponse {
-	if !isAuthorized(userID) {
+func handleStopCommand(ctx context.Context, ec2Client EC2API, ssmClient SSMAPI, userID, gameName string) InteractionResponse {
+	if !isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
 		return publicResponse("Sorry, you don't have permission to stop the server.")
 	}
-	if err := stopInstance(ctx, client); err != nil {
+	info, err := findInstanceByGame(ctx, ec2Client, gameName)
+	if err != nil {
+		return publicResponse(fmt.Sprintf("Error stopping server: %v", err))
+	}
+	if info.State == "not_found" {
+		return ephemeralResponse(fmt.Sprintf("No server found for %s.", gameName))
+	}
+	if info.State == "multiple" {
+		return ephemeralResponse(fmt.Sprintf("Multiple instances found for %s — ambiguous.", gameName))
+	}
+	if err := stopInstance(ctx, ec2Client, info.InstanceID); err != nil {
 		return publicResponse(fmt.Sprintf("Error stopping server: %v", err))
 	}
 	return publicResponse("Server is stopping. Thank you for saving AWS costs!")
 }
 
-func handleHelpCommand() InteractionResponse {
-	gameName := os.Getenv("GAME_NAME")
+func handleHelpCommand(gameName string) InteractionResponse {
 	displayName := strings.ToUpper(gameName[:1]) + gameName[1:]
 	helpText := fmt.Sprintf("**%s Server Commands:**\n`/%s status` - Check server status\n`/%s start` - Start the server\n`/%s stop` - Stop the server\n`/%s help` - Show this help message",
 		displayName, gameName, gameName, gameName, gameName)
 	return ephemeralResponse(helpText)
 }
 
-func handleHelloCommand(userID string) InteractionResponse {
-	gameName := os.Getenv("GAME_NAME")
-	instanceID := os.Getenv("INSTANCE_ID")
+func handleHelloCommand(ctx context.Context, ssmClient SSMAPI, userID, gameName string) InteractionResponse {
 	authStatus := "not authorized"
-	if isAuthorized(userID) {
+	if isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
 		authStatus = "authorized"
 	}
-	msg := fmt.Sprintf("👋 Bot is reachable!\n👤 **Your user ID**: %s\n🔐 **Authorization**: %s\n🎮 **Game**: %s\n🖥️ **Instance ID**: %s",
-		userID, authStatus, gameName, instanceID)
+	msg := fmt.Sprintf("👋 Bot is reachable!\n👤 **Your user ID**: %s\n🔐 **Authorization**: %s\n🎮 **Game**: %s",
+		userID, authStatus, gameName)
 	return ephemeralResponse(msg)
 }
 
-func handleInteraction(ctx context.Context, interaction Interaction, client EC2API) LambdaResponse {
+func handleInteraction(ctx context.Context, interaction Interaction, ec2Client EC2API, ssmClient SSMAPI) LambdaResponse {
 	if interaction.Type != 2 {
 		return jsonResponse(400, map[string]string{"error": "Not a slash command"})
+	}
+
+	// Guild allowlist check — reject requests from non-allowlisted guilds (fail closed)
+	if !checkGuildAllowlist(ctx, interaction.GuildID, ssmClient) {
+		return jsonResponse(200, ephemeralResponse("This bot is not available in this server."))
 	}
 
 	userID := ""
@@ -261,19 +356,10 @@ func handleInteraction(ctx context.Context, interaction Interaction, client EC2A
 		userID = interaction.User.ID
 	}
 
-	if interaction.Data.Name == "hello" {
-		return jsonResponse(200, handleHelloCommand(userID))
-	}
-
-	gameName := os.Getenv("GAME_NAME")
-	if interaction.Data.Name != gameName {
-		resp, _ := json.Marshal(ephemeralResponse("Unknown command"))
-		return jsonResponse(200, json.RawMessage(resp))
-	}
+	gameName := interaction.Data.Name
 
 	if len(interaction.Data.Options) == 0 {
-		resp, _ := json.Marshal(ephemeralResponse("Unknown action"))
-		return jsonResponse(200, json.RawMessage(resp))
+		return jsonResponse(200, ephemeralResponse("Unknown action"))
 	}
 
 	action := interaction.Data.Options[0].Name
@@ -281,13 +367,15 @@ func handleInteraction(ctx context.Context, interaction Interaction, client EC2A
 	var interactionResp InteractionResponse
 	switch action {
 	case "status":
-		interactionResp = handleStatusCommand(ctx, client)
+		interactionResp = handleStatusCommand(ctx, ec2Client, gameName)
 	case "start":
-		interactionResp = handleStartCommand(ctx, client, userID)
+		interactionResp = handleStartCommand(ctx, ec2Client, ssmClient, userID, gameName)
 	case "stop":
-		interactionResp = handleStopCommand(ctx, client, userID)
+		interactionResp = handleStopCommand(ctx, ec2Client, ssmClient, userID, gameName)
 	case "help":
-		interactionResp = handleHelpCommand()
+		interactionResp = handleHelpCommand(gameName)
+	case "hello":
+		interactionResp = handleHelloCommand(ctx, ssmClient, userID, gameName)
 	default:
 		interactionResp = ephemeralResponse("Unknown command")
 	}
@@ -314,15 +402,14 @@ func handler(ctx context.Context, req LambdaRequest) (LambdaResponse, error) {
 	}
 
 	var body struct {
-		Type        int         `json:"type"`
-		Interaction Interaction `json:"-"`
+		Type int `json:"type"`
 	}
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
 		log.Printf("Error parsing body: %v", err)
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
 	}
 
-	// PING
+	// PING — skip guild check, respond immediately
 	if body.Type == 1 {
 		return jsonResponse(200, map[string]int{"type": 1}), nil
 	}
@@ -333,22 +420,25 @@ func handler(ctx context.Context, req LambdaRequest) (LambdaResponse, error) {
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
 	}
 
-	client, err := newEC2Client(ctx)
+	ec2Client, err := newEC2Client(ctx)
 	if err != nil {
 		log.Printf("Error creating EC2 client: %v", err)
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
 	}
 
-	return handleInteraction(ctx, interaction, client), nil
+	ssmClient, err := newSSMClient(ctx)
+	if err != nil {
+		log.Printf("Error creating SSM client: %v", err)
+		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
+	}
+
+	return handleInteraction(ctx, interaction, ec2Client, ssmClient), nil
 }
 
-// Compile-time assertion that *ec2.Client satisfies EC2API.
+// Compile-time assertions that *ec2.Client and *ssm.Client satisfy their interfaces.
 var _ EC2API = (*ec2.Client)(nil)
+var _ SSMAPI = (*ssm.Client)(nil)
 
 func main() {
-	gameName := os.Getenv("GAME_NAME")
-	if gameName == "" {
-		log.Fatal("GAME_NAME environment variable is required")
-	}
 	lambda.Start(handler)
 }
