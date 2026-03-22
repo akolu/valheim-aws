@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -35,7 +36,24 @@ func init() {
 	botCmd.AddCommand(botUpdateCmd)
 }
 
+// checkBotDeployed returns a friendly error if terraform/bot/terraform.tfvars
+// does not exist in the repo root — indicating the bot has not been deployed yet.
+func checkBotDeployed() error {
+	root, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	tfvarsPath := filepath.Join(root, "terraform", "bot", "terraform.tfvars")
+	if _, err := os.Stat(tfvarsPath); os.IsNotExist(err) {
+		return fmt.Errorf("Bot not deployed yet — see rig/terraform/bot/ for first-time setup.")
+	}
+	return nil
+}
+
 func runBotUpdate(cmd *cobra.Command, args []string) error {
+	if err := checkBotDeployed(); err != nil {
+		return err
+	}
 	root, err := findRepoRoot()
 	if err != nil {
 		return err

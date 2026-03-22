@@ -55,6 +55,9 @@ func init() {
 }
 
 func runBotGrant(cmd *cobra.Command, args []string) error {
+	if err := checkBotDeployed(); err != nil {
+		return err
+	}
 	game, userID := args[0], args[1]
 	ctx := context.Background()
 	cfg, err := awsConfig(ctx)
@@ -69,6 +72,9 @@ func runBotGrant(cmd *cobra.Command, args []string) error {
 }
 
 func runBotRevoke(cmd *cobra.Command, args []string) error {
+	if err := checkBotDeployed(); err != nil {
+		return err
+	}
 	game, userID := args[0], args[1]
 	ctx := context.Background()
 	cfg, err := awsConfig(ctx)
@@ -83,6 +89,9 @@ func runBotRevoke(cmd *cobra.Command, args []string) error {
 }
 
 func runBotTrust(cmd *cobra.Command, args []string) error {
+	if err := checkBotDeployed(); err != nil {
+		return err
+	}
 	guildID := args[0]
 	ctx := context.Background()
 	cfg, err := awsConfig(ctx)
@@ -96,6 +105,9 @@ func runBotTrust(cmd *cobra.Command, args []string) error {
 }
 
 func runBotUntrust(cmd *cobra.Command, args []string) error {
+	if err := checkBotDeployed(); err != nil {
+		return err
+	}
 	guildID := args[0]
 	ctx := context.Background()
 	cfg, err := awsConfig(ctx)
