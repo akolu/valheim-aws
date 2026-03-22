@@ -201,6 +201,124 @@ Connect via SSM Session Manager (see [Shell Access](#shell-access-via-ssm-sessio
 - **Restart server**: `cd /opt/valheim && docker-compose restart`
 - **Stop server**: `cd /opt/valheim && docker-compose stop`
 
+## Bonfire CLI
+
+The `bonfire` CLI provides a unified operator interface for managing game server infrastructure — provisioning, archiving saves, and retiring servers — without having to drop into Terraform directories manually.
+
+### Installation
+
+```bash
+cd cli
+make install   # installs the bonfire binary via go install
+```
+
+The binary is installed to your `$GOPATH/bin` (usually `~/go/bin`). Ensure that directory is on your `$PATH`.
+
+**Prerequisites:** Go 1.21+, Terraform, AWS CLI credentials.
+
+### Environment Variables
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `BONFIRE_REPO_ROOT` | Path to the repo root (where `terraform/` lives). Set this if the binary can't locate the repo automatically. | Auto-detected by walking up from the binary location |
+| `AWS_REGION` | AWS region for all operations | `eu-north-1` |
+| `AWS_DEFAULT_REGION` | Fallback region if `AWS_REGION` is unset | `eu-north-1` |
+
+The CLI loads AWS credentials using the standard AWS credential chain (environment variables, `~/.aws/credentials`, IAM instance profile, etc.).
+
+### Command Reference
+
+#### `bonfire provision <game>`
+
+Provisions a game server by running `terraform init` and `terraform apply` in `terraform/games/<game>/`.
+
+```bash
+bonfire provision valheim
+bonfire provision valheim --restore   # also restore a save from the long-term bucket
+```
+
+The `--restore` flag lists available saves in the long-term S3 bucket and copies the selected one to the game server after provisioning.
+
+#### `bonfire archive <game>`
+
+Copies all save files from the game's backup S3 bucket (`bonfire-<game>-backups-<region>`) to the long-term bucket (`<game>-long-term-backups`), prefixed with a UTC timestamp. Does **not** destroy the server.
+
+```bash
+bonfire archive valheim
+```
+
+#### `bonfire retire <game>`
+
+End-of-season teardown: archives all saves (same as `archive`) then runs `terraform destroy`. The long-term backup bucket is preserved; only the game server and its backup bucket are destroyed.
+
+```bash
+bonfire retire valheim
+```
+
+#### `bonfire list`
+
+Lists all games that have a Terraform workspace, along with their current EC2 instance state and public IP.
+
+```bash
+bonfire list
+# GAME                 STATE            IP
+# ----                 -----            --
+# valheim              running          13.49.x.x
+# satisfactory         stopped          -
+```
+
+#### `bonfire status <game>`
+
+Shows the current state of a specific game server: EC2 instance ID, instance state, public IP, and the latest backup object in S3.
+
+```bash
+bonfire status valheim
+# Status: valheim
+# ----------------------------------------
+#   Instance ID:    i-0abc123def456789
+#   Instance State: running
+#   Public IP:      13.49.x.x
+#   Last Backup:    s3://bonfire-valheim-backups-eu-north-1/worlds/Myworld.db
+```
+
+### Required IAM Permissions
+
+The CLI uses two sets of operations. Commands that call Terraform (`provision`, `retire`) require the same broad permissions as Terraform itself. Commands that talk to AWS directly (`archive`, `list`, `status`) need a narrower set:
+
+**For `archive`, `list`, `status` (direct AWS calls):**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:CopyObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::bonfire-*-backups-*",
+        "arn:aws:s3:::bonfire-*-backups-*/*",
+        "arn:aws:s3:::*-long-term-backups",
+        "arn:aws:s3:::*-long-term-backups/*"
+      ]
+    }
+  ]
+}
+```
+
+**For `provision`, `retire` (Terraform operations):** Use the bonfire deploy role — see `terraform/archive/` for the IAM role setup.
+
 ## Discord Bot Integration
 
 A serverless Discord bot is provided that allows your play group to control the game server directly from Discord with slash commands. It's implemented using AWS Lambda and API Gateway for virtually no cost.
