@@ -47,13 +47,14 @@ func runProvision(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("loading AWS config: %w", err)
 	}
-	return autoRestoreFromLongterm(ctx, s3.NewFromConfig(cfg), game)
+	return autoRestoreFromLongterm(ctx, s3.NewFromConfig(cfg), game, cfg.Region)
 }
 
 // autoRestoreFromLongterm checks for an existing archive in the long-term bucket
-// and prints the location of the latest save if one is found. No user interaction
-// is required — if an archive exists, the latest is selected automatically.
-func autoRestoreFromLongterm(ctx context.Context, s3Client s3API, game string) error {
+// and, if found, copies the latest snapshot into the short-term backup bucket so
+// the game server's existing restore mechanism picks it up on first boot.
+// No user interaction is required — the latest snapshot is selected automatically.
+func autoRestoreFromLongterm(ctx context.Context, s3Client s3API, game, region string) error {
 	ltBucket := longtermBucketName(game)
 	fmt.Printf("\nChecking for existing archive in s3://%s...\n", ltBucket)
 
@@ -67,10 +68,30 @@ func autoRestoreFromLongterm(ctx context.Context, s3Client s3API, game string) e
 		return nil
 	}
 
-	// Extract the timestamp prefix (first path segment).
-	archivePrefix := strings.SplitN(latestKey, "/", 2)[0]
-	fmt.Printf("✓ Archive found: %s\n", archivePrefix)
-	fmt.Printf("  Source: s3://%s/%s/\n", ltBucket, archivePrefix)
-	fmt.Println("  (Copy files from this prefix to restore last known state.)")
+	// Extract the timestamp prefix (first path segment) and reconstruct as a
+	// directory prefix (with trailing slash) for listing.
+	archivePrefix := strings.SplitN(latestKey, "/", 2)[0] + "/"
+	fmt.Printf("Restoring from long-term backup: s3://%s/%s\n", ltBucket, archivePrefix)
+
+	keys, err := listObjects(ctx, s3Client, ltBucket, archivePrefix)
+	if err != nil {
+		return fmt.Errorf("listing archive objects: %w", err)
+	}
+
+	dstBucket := backupBucketName(game, region)
+	fmt.Printf("  Copying to s3://%s...\n", dstBucket)
+
+	for _, key := range keys {
+		// Strip the timestamp prefix to get the short-term bucket key.
+		dstKey := strings.TrimPrefix(key, archivePrefix)
+		if dstKey == "" || strings.HasSuffix(key, "/") {
+			continue
+		}
+		if err := copyObject(ctx, s3Client, ltBucket, key, dstBucket, dstKey); err != nil {
+			return err
+		}
+	}
+
+	fmt.Printf("✓ Long-term backup restored to s3://%s\n", dstBucket)
 	return nil
 }

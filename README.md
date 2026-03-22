@@ -66,11 +66,8 @@ Provision a server:
 bonfire provision valheim
 ```
 
-To restore a long-term archive on provision:
-
-```bash
-bonfire provision valheim --restore
-```
+If a long-term archive exists (from a previous `bonfire retire`), it is automatically
+restored on provision — no extra flags required.
 
 ### Using Terraform directly
 
@@ -111,7 +108,6 @@ Provisions a game server by running `terraform init` and `terraform apply` in `t
 
 ```bash
 bonfire provision valheim
-bonfire provision valheim --restore   # restore a save from the long-term bucket
 ```
 
 ### `bonfire retire <game>`
@@ -233,13 +229,7 @@ Each game server writes save files to a dedicated S3 bucket (`bonfire-<game>-bac
 
 Long-term buckets (`<game>-long-term-backups`) are managed by the `terraform/archive/` workspace, separate from the per-game stacks. They survive `terraform destroy` on a game server.
 
-`bonfire retire` archives all saves to the long-term bucket before tearing down the server. Saved snapshots are stamped with a UTC timestamp prefix. To restore a long-term archive on your next provision:
-
-```bash
-bonfire provision valheim --restore
-```
-
-This lists available snapshots and copies the selected one into the game server after provisioning.
+`bonfire retire` archives all saves to the long-term bucket before tearing down the server. Saved snapshots are stamped with a UTC timestamp prefix. On the next `bonfire provision`, the latest snapshot is automatically copied into the short-term backup bucket so the game server restores it on first boot.
 
 Versioning is enabled on long-term buckets with a 90-day noncurrent version retention policy.
 
