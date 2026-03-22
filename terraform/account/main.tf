@@ -124,6 +124,52 @@ resource "aws_iam_role_policy_attachment" "deploy_power_user" {
   policy_arn = "arn:aws:iam::aws:policy/PowerUserAccess"
 }
 
+# Explicit IAM delegation policy: PowerUserAccess blocks all IAM actions via NotAction,
+# so we must explicitly grant the IAM role-management actions we need. The permission
+# boundary condition ensures any role created/modified by bonfire-deploy is equally
+# constrained — preventing privilege escalation.
+resource "aws_iam_policy" "deploy_iam_delegation" {
+  name        = "bonfire-deploy-iam-delegation"
+  description = "Grants bonfire-deploy-role scoped IAM role management, conditioned on the permission boundary being enforced"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowScopedIAMDelegation"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole",
+          "iam:PutRolePolicy",
+          "iam:AttachRolePolicy",
+          "iam:DeleteRole",
+          "iam:DetachRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:PassRole",
+          "iam:CreatePolicy",
+          "iam:CreatePolicyVersion",
+          "iam:DeletePolicy",
+          "iam:DeletePolicyVersion",
+          "iam:SetDefaultPolicyVersion",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "iam:PermissionsBoundary" = local.deploy_permission_boundary_arn
+          }
+        }
+      },
+    ]
+  })
+
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "deploy_iam_delegation" {
+  role       = aws_iam_role.deploy.name
+  policy_arn = aws_iam_policy.deploy_iam_delegation.arn
+}
+
 # Minimal IAM user whose only capability is assuming bonfire-deploy-role.
 # Long-lived access keys for this user go in ~/.aws/credentials as [bonfire-base].
 resource "aws_iam_user" "base" {
