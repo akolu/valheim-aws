@@ -4,6 +4,10 @@ locals {
     ManagedBy = "terraform"
     Purpose   = "account-hardening"
   }
+
+  # Computed ahead of time so the permission boundary policy can reference its own ARN
+  # in the IAM delegation condition without creating a circular Terraform dependency.
+  deploy_permission_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/bonfire-deploy-permission-boundary"
 }
 
 data "aws_caller_identity" "current" {}
@@ -51,6 +55,37 @@ resource "aws_iam_policy" "deploy_permission_boundary" {
           "iam:PassRole",
           "organizations:*",
           "account:*",
+        ]
+        Resource = "*"
+      },
+      # Allow creating/modifying roles only when the same permission boundary is enforced.
+      # This lets bonfire-deploy create Lambda execution roles and EC2 instance roles
+      # without privilege escalation — any role it creates is equally constrained.
+      {
+        Sid    = "AllowScopedRoleCreationWithBoundary"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole",
+          "iam:PutRolePolicy",
+          "iam:AttachRolePolicy",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "iam:PermissionsBoundary" = local.deploy_permission_boundary_arn
+          }
+        }
+      },
+      # Deleting/detaching/passing a role cannot escalate privileges, so no boundary
+      # condition is required for these operations.
+      {
+        Sid    = "AllowRoleDelegationNoEscalation"
+        Effect = "Allow"
+        Action = [
+          "iam:DeleteRole",
+          "iam:DetachRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:PassRole",
         ]
         Resource = "*"
       },
