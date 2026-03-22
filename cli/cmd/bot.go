@@ -175,15 +175,11 @@ type discordCommandOption struct {
 	Type        int    `json:"type"` // 1 = SUB_COMMAND
 }
 
-// registerAllCommands registers /hello and /<game> for each game via a single global PUT.
+// registerAllCommands registers /<game> for each game via a single global PUT.
+// Each game command includes status/start/stop/help/hello subcommands.
 // First checks current commands via GET and skips the PUT if unchanged.
 func registerAllCommands(client httpClient, creds discordCreds, games []string) error {
-	commands := []discordCommand{
-		{
-			Name:        "hello",
-			Description: "Check if the bot is reachable and verify your authorization status",
-		},
-	}
+	var commands []discordCommand
 	for _, game := range games {
 		commands = append(commands, discordCommand{
 			Name:        game,
@@ -193,6 +189,7 @@ func registerAllCommands(client httpClient, creds discordCreds, games []string) 
 				{Name: "start", Description: fmt.Sprintf("Start the %s server", game), Type: 1},
 				{Name: "stop", Description: fmt.Sprintf("Stop the %s server", game), Type: 1},
 				{Name: "help", Description: fmt.Sprintf("Show available commands for the %s server", game), Type: 1},
+				{Name: "hello", Description: "Check if the bot is reachable and verify your authorization status", Type: 1},
 			},
 		})
 	}

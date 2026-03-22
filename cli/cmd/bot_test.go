@@ -216,12 +216,12 @@ func TestRegisterAllCommands_GlobalScope(t *testing.T) {
 // commands already match what we would register.
 func TestRegisterAllCommands_NoOp(t *testing.T) {
 	current := []map[string]interface{}{
-		{"id": "1", "name": "hello", "description": "Check if the bot is reachable and verify your authorization status"},
-		{"id": "2", "name": "valheim", "description": "Control the valheim server", "options": []map[string]interface{}{
-			{"id": "3", "name": "status", "type": 1, "description": "Check if the valheim server is running"},
-			{"id": "4", "name": "start", "type": 1, "description": "Start the valheim server"},
-			{"id": "5", "name": "stop", "type": 1, "description": "Stop the valheim server"},
-			{"id": "6", "name": "help", "type": 1, "description": "Show available commands for the valheim server"},
+		{"id": "1", "name": "valheim", "description": "Control the valheim server", "options": []map[string]interface{}{
+			{"id": "2", "name": "status", "type": 1, "description": "Check if the valheim server is running"},
+			{"id": "3", "name": "start", "type": 1, "description": "Start the valheim server"},
+			{"id": "4", "name": "stop", "type": 1, "description": "Stop the valheim server"},
+			{"id": "5", "name": "help", "type": 1, "description": "Show available commands for the valheim server"},
+			{"id": "6", "name": "hello", "type": 1, "description": "Check if the bot is reachable and verify your authorization status"},
 		}},
 	}
 	client := &mockHTTPClient{
@@ -246,7 +246,7 @@ func TestRegisterAllCommands_NoOp(t *testing.T) {
 // when current commands differ.
 func TestRegisterAllCommands_UpdatesWhenDifferent(t *testing.T) {
 	current := []map[string]interface{}{
-		{"id": "1", "name": "hello"},
+		{"id": "1", "name": "valheim"},
 	}
 	client := &mockHTTPClient{
 		responses: []*http.Response{
@@ -288,13 +288,9 @@ func TestRegisterAllCommands_MultiGame(t *testing.T) {
 		t.Fatalf("parsing command payload: %v", err)
 	}
 
-	// Expect /hello + one command per game
-	if len(commands) != 3 {
-		t.Fatalf("expected 3 commands (/hello + 2 games), got %d", len(commands))
-	}
-
-	if commands[0].Name != "hello" {
-		t.Errorf("commands[0].Name = %q, want %q", commands[0].Name, "hello")
+	// Expect one command per game (hello is a subcommand of each)
+	if len(commands) != 2 {
+		t.Fatalf("expected 2 commands (one per game), got %d", len(commands))
 	}
 
 	byName := map[string]discordCommand{}
@@ -312,7 +308,7 @@ func TestRegisterAllCommands_MultiGame(t *testing.T) {
 		for _, opt := range c.Options {
 			subNames[opt.Name] = true
 		}
-		for _, want := range []string{"status", "start", "stop", "help"} {
+		for _, want := range []string{"status", "start", "stop", "help", "hello"} {
 			if !subNames[want] {
 				t.Errorf("missing subcommand %q in /%s options", want, game)
 			}
@@ -339,22 +335,18 @@ func TestRegisterAllCommands_SingleGamePayload(t *testing.T) {
 	if err := json.Unmarshal(gotBody, &commands); err != nil {
 		t.Fatalf("parsing command payload: %v", err)
 	}
-	if len(commands) != 2 {
-		t.Fatalf("expected 2 commands, got %d", len(commands))
+	if len(commands) != 1 {
+		t.Fatalf("expected 1 command, got %d", len(commands))
 	}
 
-	if commands[0].Name != "hello" {
-		t.Errorf("commands[0].Name = %q, want %q", commands[0].Name, "hello")
-	}
-
-	if commands[1].Name != "valheim" {
-		t.Errorf("commands[1].Name = %q, want %q", commands[1].Name, "valheim")
+	if commands[0].Name != "valheim" {
+		t.Errorf("commands[0].Name = %q, want %q", commands[0].Name, "valheim")
 	}
 	subNames := map[string]bool{}
-	for _, opt := range commands[1].Options {
+	for _, opt := range commands[0].Options {
 		subNames[opt.Name] = true
 	}
-	for _, want := range []string{"status", "start", "stop", "help"} {
+	for _, want := range []string{"status", "start", "stop", "help", "hello"} {
 		if !subNames[want] {
 			t.Errorf("missing subcommand %q in /valheim options", want)
 		}

@@ -45,13 +45,9 @@ if [ "$IS_GLOBAL" = false ] && [ -z "${DISCORD_GUILD_ID:-}" ]; then
   exit 1
 fi
 
-# Build the JSON payload for the two commands: /hello and /<game>
+# Build the JSON payload for the single /<game> command with all subcommands
 COMMANDS_JSON=$(cat <<EOF
 [
-  {
-    "name": "hello",
-    "description": "Check if the bot is reachable and verify your authorization status"
-  },
   {
     "name": "${GAME_NAME}",
     "description": "Control the ${GAME_NAME} server",
@@ -59,7 +55,8 @@ COMMANDS_JSON=$(cat <<EOF
       {"name": "status", "description": "Check if the ${GAME_NAME} server is running", "type": 1},
       {"name": "start",  "description": "Start the ${GAME_NAME} server",               "type": 1},
       {"name": "stop",   "description": "Stop the ${GAME_NAME} server",                "type": 1},
-      {"name": "help",   "description": "Show available commands for the ${GAME_NAME} server", "type": 1}
+      {"name": "help",   "description": "Show available commands for the ${GAME_NAME} server", "type": 1},
+      {"name": "hello",  "description": "Check if the bot is reachable and verify your authorization status", "type": 1}
     ]
   }
 ]
@@ -107,7 +104,7 @@ if [ "$IS_GLOBAL" = true ] && [ -n "${DISCORD_GUILD_ID:-}" ]; then
   fi
 fi
 
-echo "Registering 2 slash commands..."
+echo "Registering 1 slash command..."
 
 if [ "$IS_GLOBAL" = true ]; then
   URL="${DISCORD_API}/applications/${DISCORD_APP_ID}/commands"
