@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -61,6 +62,7 @@ func gameInstanceInfo(ctx context.Context, ec2Client *ec2.Client, game string) (
 		},
 	})
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "error querying EC2 for game %s: %v\n", game, err)
 		return "error", "-"
 	}
 

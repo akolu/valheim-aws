@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -40,7 +41,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// EC2 instance info
 	instanceID, state, ip, err := describeGameInstance(ctx, ec2Client, game)
 	if err != nil {
-		fmt.Printf("  Instance: error (%v)\n", err)
+		fmt.Fprintf(os.Stderr, "error querying EC2 instance for game %s: %v\n", game, err)
+		fmt.Printf("  Instance: error\n")
 	} else if instanceID == "" {
 		fmt.Printf("  Instance: not provisioned\n")
 	} else {
@@ -53,7 +55,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	backupBucket := backupBucketName(game, region)
 	lastBackup, err := latestObjectByPrefix(ctx, s3Client, backupBucket, "")
 	if err != nil {
-		fmt.Printf("  Last Backup:    error (%v)\n", err)
+		fmt.Fprintf(os.Stderr, "error querying S3 backups for game %s: %v\n", game, err)
+		fmt.Printf("  Last Backup:    error\n")
 	} else if lastBackup == "" {
 		fmt.Printf("  Last Backup:    none\n")
 	} else {
