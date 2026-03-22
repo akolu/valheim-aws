@@ -135,9 +135,15 @@ Everything else (game name, instance ID, authorized users, guild ID) is dynamic 
 
 `bonfire bot update [game]` (bo-07d, already implemented) works with this architecture unchanged — it registers commands and syncs the endpoint for the single Discord app.
 
-Required enhancements:
-- `--authorized-users id1,id2` — write per-game authorized user list to SSM
-- `--add-guild guild_id` / `--remove-guild guild_id` — manage the global guild allowlist in SSM
+Full bot subcommand interface:
+
+```bash
+bonfire bot update                    # sync interaction endpoint + register global commands
+bonfire bot grant <game> <user_id>    # add user to /bonfire/<game>/authorized_users in SSM
+bonfire bot revoke <game> <user_id>   # remove user from /bonfire/<game>/authorized_users in SSM
+bonfire bot trust <guild_id>          # add guild to /bonfire/allowed_guilds in SSM
+bonfire bot untrust <guild_id>        # remove guild from /bonfire/allowed_guilds in SSM
+```
 
 `bonfire` is the **only** supported interface for bot configuration — no raw AWS CLI.
 
