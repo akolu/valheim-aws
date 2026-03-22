@@ -89,7 +89,11 @@ func formatLongtermArchives(prefixes []string) string {
 			latest = p
 		}
 	}
-	return fmt.Sprintf("%d snapshots, latest %s", len(prefixes), strings.TrimSuffix(latest, "/"))
+	noun := "snapshots"
+	if len(prefixes) == 1 {
+		noun = "snapshot"
+	}
+	return fmt.Sprintf("%d %s, latest %s", len(prefixes), noun, strings.TrimSuffix(latest, "/"))
 }
 
 // describeGameInstance finds the EC2 instance for a game by tag.

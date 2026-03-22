@@ -45,7 +45,7 @@ func checkBotDeployed() error {
 	}
 	tfvarsPath := filepath.Join(root, "terraform", "bot", "terraform.tfvars")
 	if _, err := os.Stat(tfvarsPath); os.IsNotExist(err) {
-		return fmt.Errorf("Bot not deployed yet — see rig/terraform/bot/ for first-time setup.")
+		return fmt.Errorf("Bot not deployed yet — see terraform/bot/ for first-time setup.")
 	}
 	return nil
 }

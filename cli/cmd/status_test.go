@@ -25,7 +25,7 @@ func TestFormatLongtermArchives_None(t *testing.T) {
 
 func TestFormatLongtermArchives_Single(t *testing.T) {
 	got := formatLongtermArchives([]string{"2026-03-21T150405Z/"})
-	want := "1 snapshots, latest 2026-03-21T150405Z"
+	want := "1 snapshot, latest 2026-03-21T150405Z"
 	if got != want {
 		t.Errorf("formatLongtermArchives() = %q, want %q", got, want)
 	}
