@@ -1,12 +1,8 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"io"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -14,20 +10,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var restoreFlag bool
-
 var provisionCmd = &cobra.Command{
 	Use:   "provision <game>",
 	Short: "Provision a game server (terraform init + apply)",
 	Long: `Provision a game server by running terraform init and apply for the
-specified game workspace. With --restore, lists available saves in the
-long-term bucket and restores the selected save after provisioning.`,
+specified game workspace. If an archive exists in the long-term bucket, the
+latest save is selected automatically and its location is printed. If no
+archive exists, the server starts fresh.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runProvision,
-}
-
-func init() {
-	provisionCmd.Flags().BoolVar(&restoreFlag, "restore", false, "Restore a save from the long-term bucket after provisioning")
 }
 
 func runProvision(cmd *cobra.Command, args []string) error {
@@ -49,56 +40,34 @@ func runProvision(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("✓ %s provisioned\n", game)
 
-	if restoreFlag {
-		cfg, err := awsConfig(ctx)
-		if err != nil {
-			return fmt.Errorf("loading AWS config: %w", err)
-		}
-		if err := restoreFromLongterm(ctx, s3.NewFromConfig(cfg), game, os.Stdin); err != nil {
-			return err
-		}
+	cfg, err := awsConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("loading AWS config: %w", err)
 	}
-
-	return nil
+	return autoRestoreFromLongterm(ctx, s3.NewFromConfig(cfg), game)
 }
 
-// restoreFromLongterm lists saves and prompts the user to choose one.
-// The reader parameter allows injection of input for testing.
-func restoreFromLongterm(ctx context.Context, s3Client s3API, game string, reader io.Reader) error {
+// autoRestoreFromLongterm checks for an existing archive in the long-term bucket
+// and prints the location of the latest save if one is found. No user interaction
+// is required — if an archive exists, the latest is selected automatically.
+func autoRestoreFromLongterm(ctx context.Context, s3Client s3API, game string) error {
 	ltBucket := longtermBucketName(game)
-	fmt.Printf("\nFetching available saves from s3://%s...\n", ltBucket)
+	fmt.Printf("\nChecking for existing archive in s3://%s...\n", ltBucket)
 
-	keys, err := listObjects(ctx, s3Client, ltBucket, "")
+	latestKey, err := latestObjectByPrefix(ctx, s3Client, ltBucket, "")
 	if err != nil {
-		return fmt.Errorf("listing saves: %w", err)
+		return fmt.Errorf("checking for archive: %w", err)
 	}
-	if len(keys) == 0 {
-		fmt.Println("No saves found in long-term bucket.")
+
+	if latestKey == "" {
+		fmt.Println("No archive found — starting fresh.")
 		return nil
 	}
 
-	fmt.Println("Available saves:")
-	for i, k := range keys {
-		fmt.Printf("  [%d] %s\n", i+1, k)
-	}
-	fmt.Printf("Select save to restore [1-%d] (or 0 to skip): ", len(keys))
-
-	scanner := bufio.NewScanner(reader)
-	scanner.Scan()
-	input := strings.TrimSpace(scanner.Text())
-	choice, err := strconv.Atoi(input)
-	if err != nil || choice == 0 {
-		fmt.Println("Skipping restore.")
-		return nil
-	}
-	if choice < 1 || choice > len(keys) {
-		return fmt.Errorf("invalid selection: %d", choice)
-	}
-
-	selectedKey := keys[choice-1]
-	fmt.Printf("Selected: %s\n", selectedKey)
-	fmt.Println("(Save file is available in the long-term bucket; manual restore to instance is required.)")
-	fmt.Printf("  Source: s3://%s/%s\n", ltBucket, selectedKey)
-
+	// Extract the timestamp prefix (first path segment).
+	archivePrefix := strings.SplitN(latestKey, "/", 2)[0]
+	fmt.Printf("✓ Archive found: %s\n", archivePrefix)
+	fmt.Printf("  Source: s3://%s/%s/\n", ltBucket, archivePrefix)
+	fmt.Println("  (Copy files from this prefix to restore last known state.)")
 	return nil
 }
