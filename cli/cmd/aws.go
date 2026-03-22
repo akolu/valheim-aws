@@ -17,7 +17,11 @@ import (
 const defaultRegion = "eu-north-1"
 
 // awsConfig loads the AWS config (uses environment / profile credentials).
+// If AWS_PROFILE is not set, it defaults to "bonfire-deploy".
 func awsConfig(ctx context.Context) (aws.Config, error) {
+	if os.Getenv("AWS_PROFILE") == "" {
+		os.Setenv("AWS_PROFILE", "bonfire-deploy")
+	}
 	region := os.Getenv("AWS_REGION")
 	if region == "" {
 		region = os.Getenv("AWS_DEFAULT_REGION")

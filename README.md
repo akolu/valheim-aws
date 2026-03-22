@@ -221,10 +221,11 @@ The binary is installed to your `$GOPATH/bin` (usually `~/go/bin`). Ensure that 
 | Variable | Purpose | Default |
 |---|---|---|
 | `BONFIRE_REPO_ROOT` | Path to the repo root (where `terraform/` lives). Set this if the binary can't locate the repo automatically. | Auto-detected by walking up from the binary location |
+| `AWS_PROFILE` | AWS credentials profile to use | `bonfire-deploy` |
 | `AWS_REGION` | AWS region for all operations | `eu-north-1` |
 | `AWS_DEFAULT_REGION` | Fallback region if `AWS_REGION` is unset | `eu-north-1` |
 
-The CLI loads AWS credentials using the standard AWS credential chain (environment variables, `~/.aws/credentials`, IAM instance profile, etc.).
+The CLI loads AWS credentials using the standard AWS credential chain (environment variables, `~/.aws/credentials`, IAM instance profile, etc.). If `AWS_PROFILE` is not set, it defaults to the `bonfire-deploy` profile.
 
 ### Command Reference
 
