@@ -52,14 +52,13 @@ Per-game authorized user lists stored in SSM Standard Parameters (free tier):
 /bonfire/factorio/authorized_users      → "discord_id1,discord_id3"
 ```
 
-The Lambda reads the relevant parameter at invocation time — changes take effect immediately without redeployment. Update via CLI:
+The Lambda reads the relevant parameter at invocation time — changes take effect immediately without redeployment. Managed exclusively via the bonfire CLI:
 
 ```bash
-aws ssm put-parameter --name /bonfire/valheim/authorized_users \
-  --value "id1,id2,id3" --type String --overwrite
+bonfire bot update valheim --authorized-users id1,id2,id3
 ```
 
-Or via `bonfire bot update valheim --authorized-users id1,id2,id3` (future CLI enhancement).
+No raw AWS CLI interaction needed — `bonfire` is the single operator interface for all bot configuration.
 
 **Why SSM over EC2 tags:** Tags require update regardless, so the "stateless" benefit of tags doesn't apply. SSM is the conventional place for per-resource config, is IAM-controllable, and is free at this scale.
 
@@ -118,6 +117,8 @@ Everything else (game name, instance ID, authorized users, guild ID) is dynamic 
 
 ## CLI Impact
 
-`bonfire bot update [game]` (bo-07d, already implemented) works with this architecture unchanged — it registers commands and syncs the endpoint for the single Discord app. Minor enhancement needed: `--authorized-users` flag to update SSM parameters directly.
+`bonfire bot update [game]` (bo-07d, already implemented) works with this architecture unchanged — it registers commands and syncs the endpoint for the single Discord app.
+
+Required enhancement: `--authorized-users` flag to write per-game authorized user lists to SSM. This is the **only** supported way to manage authorized users — no raw AWS CLI. `bonfire` is the single operator interface for all bot configuration.
 
 `bonfire bot deploy` was explicitly deferred (YAGNI) — the single bot design makes it even less necessary since first-time setup is a one-time operation for the shared bot, not per-game.
