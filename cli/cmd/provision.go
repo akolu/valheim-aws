@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -47,7 +48,11 @@ func runProvision(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✓ %s provisioned\n", game)
 
 	if restoreFlag {
-		if err := restoreFromLongterm(ctx, game); err != nil {
+		cfg, err := awsConfig(ctx)
+		if err != nil {
+			return fmt.Errorf("loading AWS config: %w", err)
+		}
+		if err := restoreFromLongterm(ctx, s3.NewFromConfig(cfg), game, os.Stdin); err != nil {
 			return err
 		}
 	}
@@ -55,13 +60,9 @@ func runProvision(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func restoreFromLongterm(ctx context.Context, game string) error {
-	cfg, err := awsConfig(ctx)
-	if err != nil {
-		return fmt.Errorf("loading AWS config: %w", err)
-	}
-	s3Client := s3.NewFromConfig(cfg)
-
+// restoreFromLongterm lists saves and prompts the user to choose one.
+// The reader parameter allows injection of input for testing.
+func restoreFromLongterm(ctx context.Context, s3Client s3API, game string, reader io.Reader) error {
 	ltBucket := longtermBucketName(game)
 	fmt.Printf("\nFetching available saves from s3://%s...\n", ltBucket)
 
@@ -80,7 +81,7 @@ func restoreFromLongterm(ctx context.Context, game string) error {
 	}
 	fmt.Printf("Select save to restore [1-%d] (or 0 to skip): ", len(keys))
 
-	scanner := bufio.NewScanner(os.Stdin)
+	scanner := bufio.NewScanner(reader)
 	scanner.Scan()
 	input := strings.TrimSpace(scanner.Text())
 	choice, err := strconv.Atoi(input)

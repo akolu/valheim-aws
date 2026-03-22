@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/spf13/cobra"
 )
 
@@ -20,10 +21,18 @@ preserved; only the game server and backup bucket are destroyed.`,
 func runRetire(cmd *cobra.Command, args []string) error {
 	game := args[0]
 	ctx := context.Background()
+	cfg, err := awsConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("loading AWS config: %w", err)
+	}
+	return retireGame(ctx, s3.NewFromConfig(cfg), cfg.Region, game)
+}
 
+// retireGame archives saves then destroys infrastructure. Accepts a client for testability.
+func retireGame(ctx context.Context, s3Client s3API, region, game string) error {
 	// Step 1: Archive saves to long-term bucket
 	fmt.Printf("Step 1/2: Archiving %s saves before retire...\n", game)
-	if err := archiveGame(ctx, game); err != nil {
+	if err := archiveGame(ctx, s3Client, region, game); err != nil {
 		return fmt.Errorf("archive failed: %w", err)
 	}
 

@@ -21,19 +21,17 @@ bucket. Does NOT destroy the server. Use 'retire' to archive and destroy.`,
 
 func runArchive(cmd *cobra.Command, args []string) error {
 	game := args[0]
-	return archiveGame(context.Background(), game)
-}
-
-// archiveGame copies all objects from the game's backup bucket to the long-term bucket.
-// It prefixes the destination keys with a timestamp to avoid collisions.
-func archiveGame(ctx context.Context, game string) error {
+	ctx := context.Background()
 	cfg, err := awsConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("loading AWS config: %w", err)
 	}
-	s3Client := s3.NewFromConfig(cfg)
+	return archiveGame(ctx, s3.NewFromConfig(cfg), cfg.Region, game)
+}
 
-	region := cfg.Region
+// archiveGame copies all objects from the game's backup bucket to the long-term bucket.
+// It prefixes the destination keys with a timestamp to avoid collisions.
+func archiveGame(ctx context.Context, s3Client s3API, region, game string) error {
 	srcBucket := backupBucketName(game, region)
 	dstBucket := longtermBucketName(game)
 	timestamp := time.Now().UTC().Format("2006-01-02T150405Z")

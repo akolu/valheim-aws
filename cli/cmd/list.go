@@ -48,7 +48,7 @@ func runList(cmd *cobra.Command, args []string) error {
 
 // gameInstanceInfo queries EC2 for the instance associated with a game workspace
 // by looking up instances tagged with tag:Game=<game> and tag:Project=bonfire.
-func gameInstanceInfo(ctx context.Context, ec2Client *ec2.Client, game string) (string, string) {
+func gameInstanceInfo(ctx context.Context, ec2Client ec2API, game string) (string, string) {
 	resp, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 		Filters: []ec2types.Filter{
 			{

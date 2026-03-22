@@ -67,7 +67,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 }
 
 // describeGameInstance finds the EC2 instance for a game by tag.
-func describeGameInstance(ctx context.Context, ec2Client *ec2.Client, game string) (id, state, ip string, err error) {
+func describeGameInstance(ctx context.Context, ec2Client ec2API, game string) (id, state, ip string, err error) {
 	resp, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 		Filters: []ec2types.Filter{
 			{

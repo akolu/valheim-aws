@@ -40,8 +40,20 @@ func longtermBucketName(game string) string {
 	return fmt.Sprintf("%s-long-term-backups", game)
 }
 
+// s3API is the subset of the S3 client API used by this package.
+type s3API interface {
+	s3.ListObjectsV2APIClient
+	CopyObject(ctx context.Context, params *s3.CopyObjectInput, optFns ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+}
+
+// ec2API is the subset of the EC2 client API used by this package.
+type ec2API interface {
+	DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+}
+
 // listObjects returns all object keys in an S3 bucket with the given prefix.
-func listObjects(ctx context.Context, s3Client *s3.Client, bucket, prefix string) ([]string, error) {
+func listObjects(ctx context.Context, s3Client s3API, bucket, prefix string) ([]string, error) {
 	var keys []string
 	paginator := s3.NewListObjectsV2Paginator(s3Client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
@@ -62,7 +74,7 @@ func listObjects(ctx context.Context, s3Client *s3.Client, bucket, prefix string
 }
 
 // copyObject copies an S3 object from srcBucket/srcKey to dstBucket/dstKey.
-func copyObject(ctx context.Context, s3Client *s3.Client, srcBucket, srcKey, dstBucket, dstKey string) error {
+func copyObject(ctx context.Context, s3Client s3API, srcBucket, srcKey, dstBucket, dstKey string) error {
 	_, err := s3Client.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:     aws.String(dstBucket),
 		Key:        aws.String(dstKey),
@@ -75,7 +87,7 @@ func copyObject(ctx context.Context, s3Client *s3.Client, srcBucket, srcKey, dst
 }
 
 // getObject downloads an S3 object and writes it to w.
-func getObject(ctx context.Context, s3Client *s3.Client, bucket, key string, w io.Writer) error {
+func getObject(ctx context.Context, s3Client s3API, bucket, key string, w io.Writer) error {
 	resp, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -92,7 +104,7 @@ func getObject(ctx context.Context, s3Client *s3.Client, bucket, key string, w i
 
 // instanceState returns the EC2 instance state for the given instance ID.
 // Returns empty string if not found.
-func instanceState(ctx context.Context, ec2Client *ec2.Client, instanceID string) (string, string, error) {
+func instanceState(ctx context.Context, ec2Client ec2API, instanceID string) (string, string, error) {
 	if instanceID == "" {
 		return "", "", nil
 	}
@@ -120,7 +132,7 @@ func instanceState(ctx context.Context, ec2Client *ec2.Client, instanceID string
 }
 
 // spotInstanceState returns state for the given spot instance request.
-func spotInstanceState(ctx context.Context, ec2Client *ec2.Client, instanceID string) (ec2types.InstanceStateName, string, error) {
+func spotInstanceState(ctx context.Context, ec2Client ec2API, instanceID string) (ec2types.InstanceStateName, string, error) {
 	resp, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 		InstanceIds: []string{instanceID},
 	})
@@ -140,7 +152,7 @@ func spotInstanceState(ctx context.Context, ec2Client *ec2.Client, instanceID st
 }
 
 // latestObjectByPrefix returns the lexicographically last key in a bucket with the given prefix.
-func latestObjectByPrefix(ctx context.Context, s3Client *s3.Client, bucket, prefix string) (string, error) {
+func latestObjectByPrefix(ctx context.Context, s3Client s3API, bucket, prefix string) (string, error) {
 	keys, err := listObjects(ctx, s3Client, bucket, prefix)
 	if err != nil {
 		return "", err
