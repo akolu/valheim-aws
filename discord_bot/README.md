@@ -22,6 +22,7 @@ For example: `/valheim start`, `/satisfactory status`
 - Go 1.21 or later
 - AWS CLI configured with appropriate credentials
 - Terraform installed
+- curl (for registering slash commands)
 - A deployed game server (you'll need the EC2 instance ID)
 
 ## Setup
@@ -65,11 +66,16 @@ To find your Discord Guild ID: Enable Developer Mode in Discord settings, then r
 ### Step 3: Register Slash Commands
 
 ```bash
-npm install
-npm run register-commands
+./register-commands.sh
 ```
 
 This registers `/<game>` commands to your Discord server. You should see them appear immediately.
+
+For global commands (all servers, takes up to an hour to propagate):
+
+```bash
+./register-commands.sh --global
+```
 
 ### Step 4: Build the Lambda Package
 
@@ -131,7 +137,7 @@ Try the commands in your Discord server:
 
 - **Guild commands** appear instantly but only in the specified server
 - **Global commands** take up to an hour to propagate
-- Ensure you ran `npm run register-commands` with correct credentials
+- Ensure you ran `./register-commands.sh` with correct credentials
 
 ### "Interaction Failed" Error
 
@@ -159,14 +165,14 @@ Try the commands in your Discord server:
 - `go/main_test.go` - Unit tests
 - `go/Makefile` - Build targets
 - `go/go.mod` / `go/go.sum` - Go module dependencies
-- `register-commands.js` - Script to register slash commands (Node.js)
+- `register-commands.sh` - Shell script to register slash commands (requires curl)
 - `.env` - Local environment variables (not committed)
 - `.env.example` - Template for environment variables
 
 ### Available Scripts
 
-- `npm run register-commands` - Register commands to a specific guild
-- `npm run register-commands:global` - Register global commands (all servers)
+- `./register-commands.sh` - Register commands to a specific guild
+- `./register-commands.sh --global` - Register global commands (all servers)
 - `make build` (in `go/`) - Build and package the Lambda deployment zip
 
 ### Runtime Details
@@ -194,8 +200,8 @@ go test ./...
 
 ### Updating Commands
 
-1. Edit command definitions in `register-commands.js`
-2. Run `npm run register-commands`
+1. Edit command definitions in `register-commands.sh`
+2. Run `./register-commands.sh`
 3. Update handler logic in `go/main.go` if needed
 4. Run `make build` in `go/`
 5. Run `terraform apply` to deploy
