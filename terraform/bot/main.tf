@@ -44,7 +44,7 @@ resource "aws_iam_policy" "bot_lambda" {
           "logs:CreateLogStream",
           "logs:PutLogEvents",
         ]
-        Resource = "arn:aws:logs:*:*:*"
+        Resource = "${aws_cloudwatch_log_group.bot_lambda.arn}:*"
       },
       {
         Sid    = "EC2Describe"
@@ -60,6 +60,11 @@ resource "aws_iam_policy" "bot_lambda" {
           "ec2:StopInstances",
         ]
         Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:ResourceTag/Project" = "bonfire"
+          }
+        }
       },
       {
         Sid    = "SSMReadBonfire"
