@@ -21,7 +21,9 @@ bucket. Does NOT destroy the server. Use 'retire' to archive and destroy.`,
 
 func runArchive(cmd *cobra.Command, args []string) error {
 	game := args[0]
-	return archiveGame(context.Background(), game)
+	ctx, cancel := cliContext()
+	defer cancel()
+	return archiveGame(ctx, game)
 }
 
 // archiveGame copies all objects from the game's backup bucket to the long-term bucket.

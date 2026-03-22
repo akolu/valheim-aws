@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -15,6 +16,15 @@ import (
 )
 
 const defaultRegion = "eu-north-1"
+
+// awsTimeout is the default timeout for CLI AWS API calls.
+const awsTimeout = 30 * time.Second
+
+// cliContext returns a context with the default AWS timeout for CLI commands.
+// Callers must defer the returned cancel function.
+func cliContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), awsTimeout)
+}
 
 // awsConfig loads the AWS config (uses environment / profile credentials).
 func awsConfig(ctx context.Context) (aws.Config, error) {

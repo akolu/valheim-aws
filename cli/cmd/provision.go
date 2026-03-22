@@ -30,7 +30,8 @@ func init() {
 
 func runProvision(cmd *cobra.Command, args []string) error {
 	game := args[0]
-	ctx := context.Background()
+	ctx, cancel := cliContext()
+	defer cancel()
 
 	dir, err := terraformDir(game)
 	if err != nil {

@@ -19,7 +19,8 @@ var listCmd = &cobra.Command{
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx, cancel := cliContext()
+	defer cancel()
 
 	games, err := availableGames()
 	if err != nil {

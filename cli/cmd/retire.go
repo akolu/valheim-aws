@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -19,7 +18,8 @@ preserved; only the game server and backup bucket are destroyed.`,
 
 func runRetire(cmd *cobra.Command, args []string) error {
 	game := args[0]
-	ctx := context.Background()
+	ctx, cancel := cliContext()
+	defer cancel()
 
 	// Step 1: Archive saves to long-term bucket
 	fmt.Printf("Step 1/2: Archiving %s saves before retire...\n", game)
