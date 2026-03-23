@@ -46,12 +46,20 @@ func runRetire(cmd *cobra.Command, args []string) error {
 // retireGame archives saves then destroys infrastructure. Accepts a client and stdin for testability.
 func retireGame(ctx context.Context, s3Client s3API, region, game string, stdin io.Reader) error {
 	// Step 1: Archive saves to long-term bucket
-	fmt.Printf("Step 1/2: Archiving %s saves before retire...\n", game)
+	fmt.Printf("Step 1/3: Archiving %s saves before retire...\n", game)
 	if err := archiveGame(ctx, s3Client, region, game); err != nil {
 		return fmt.Errorf("archive failed: %w", err)
 	}
 
-	// Step 2: Plan the destroy and confirm before applying
+	// Step 2: Empty the backup bucket so terraform destroy can remove it
+	// (force_destroy=false is intentional; we empty it manually after archiving)
+	backupBucket := backupBucketName(game, region)
+	fmt.Printf("\nStep 2/3: Emptying backup bucket %s...\n", backupBucket)
+	if err := emptyVersionedBucket(ctx, s3Client, backupBucket); err != nil {
+		return fmt.Errorf("emptying backup bucket: %w", err)
+	}
+
+	// Step 3: Plan the destroy and confirm before applying
 	dir, err := terraformDir(game)
 	if err != nil {
 		return err
@@ -65,7 +73,7 @@ func retireGame(ctx context.Context, s3Client s3API, region, game string, stdin 
 	planPath := planFile.Name()
 	defer os.Remove(planPath)
 
-	fmt.Printf("\nStep 2/2: Planning %s infrastructure destruction...\n", game)
+	fmt.Printf("\nStep 3/3: Planning %s infrastructure destruction...\n", game)
 	if err := tfPlanDestroyFn(dir, planPath); err != nil {
 		return fmt.Errorf("terraform plan -destroy failed: %w", err)
 	}

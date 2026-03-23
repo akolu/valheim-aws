@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 const defaultRegion = "eu-north-1"
@@ -46,6 +47,8 @@ func longtermBucketName(game string) string {
 type s3API interface {
 	s3.ListObjectsV2APIClient
 	CopyObject(ctx context.Context, params *s3.CopyObjectInput, optFns ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
+	ListObjectVersions(ctx context.Context, params *s3.ListObjectVersionsInput, optFns ...func(*s3.Options)) (*s3.ListObjectVersionsOutput, error)
+	DeleteObjects(ctx context.Context, params *s3.DeleteObjectsInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
 }
 
 // ec2API is the subset of the EC2 client API used by this package.
@@ -154,4 +157,41 @@ func latestObjectByPrefix(ctx context.Context, s3Client s3API, bucket, prefix st
 		}
 	}
 	return latest, nil
+}
+
+// emptyVersionedBucket deletes all object versions and delete markers from a
+// versioned S3 bucket, leaving it empty so terraform destroy can remove it.
+func emptyVersionedBucket(ctx context.Context, s3Client s3API, bucket string) error {
+	input := &s3.ListObjectVersionsInput{Bucket: aws.String(bucket)}
+	for {
+		out, err := s3Client.ListObjectVersions(ctx, input)
+		if err != nil {
+			return fmt.Errorf("listing versions in s3://%s: %w", bucket, err)
+		}
+
+		var objects []s3types.ObjectIdentifier
+		for _, v := range out.Versions {
+			objects = append(objects, s3types.ObjectIdentifier{Key: v.Key, VersionId: v.VersionId})
+		}
+		for _, dm := range out.DeleteMarkers {
+			objects = append(objects, s3types.ObjectIdentifier{Key: dm.Key, VersionId: dm.VersionId})
+		}
+
+		if len(objects) > 0 {
+			_, err = s3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+				Bucket: aws.String(bucket),
+				Delete: &s3types.Delete{Objects: objects, Quiet: aws.Bool(true)},
+			})
+			if err != nil {
+				return fmt.Errorf("deleting objects from s3://%s: %w", bucket, err)
+			}
+		}
+
+		if !aws.ToBool(out.IsTruncated) {
+			break
+		}
+		input.KeyMarker = out.NextKeyMarker
+		input.VersionIdMarker = out.NextVersionIdMarker
+	}
+	return nil
 }

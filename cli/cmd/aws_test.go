@@ -14,8 +14,10 @@ import (
 
 // mockS3 implements s3API for testing.
 type mockS3 struct {
-	listFunc func(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
-	copyFunc func(ctx context.Context, params *s3.CopyObjectInput, optFns ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
+	listFunc        func(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+	copyFunc        func(ctx context.Context, params *s3.CopyObjectInput, optFns ...func(*s3.Options)) (*s3.CopyObjectOutput, error)
+	listVersionFunc func(ctx context.Context, params *s3.ListObjectVersionsInput, optFns ...func(*s3.Options)) (*s3.ListObjectVersionsOutput, error)
+	deleteObjectsFunc func(ctx context.Context, params *s3.DeleteObjectsInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
 }
 
 func (m *mockS3) ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
@@ -30,6 +32,20 @@ func (m *mockS3) CopyObject(ctx context.Context, params *s3.CopyObjectInput, opt
 		return m.copyFunc(ctx, params, optFns...)
 	}
 	return &s3.CopyObjectOutput{}, nil
+}
+
+func (m *mockS3) ListObjectVersions(ctx context.Context, params *s3.ListObjectVersionsInput, optFns ...func(*s3.Options)) (*s3.ListObjectVersionsOutput, error) {
+	if m.listVersionFunc != nil {
+		return m.listVersionFunc(ctx, params, optFns...)
+	}
+	return &s3.ListObjectVersionsOutput{}, nil
+}
+
+func (m *mockS3) DeleteObjects(ctx context.Context, params *s3.DeleteObjectsInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error) {
+	if m.deleteObjectsFunc != nil {
+		return m.deleteObjectsFunc(ctx, params, optFns...)
+	}
+	return &s3.DeleteObjectsOutput{}, nil
 }
 
 // mockEC2 implements ec2API for testing.
@@ -313,6 +329,76 @@ func TestListCommonPrefixes_Error(t *testing.T) {
 		},
 	}
 	_, err := listCommonPrefixes(context.Background(), client, "bucket")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+// --- emptyVersionedBucket tests ---
+
+func TestEmptyVersionedBucket_Empty(t *testing.T) {
+	client := &mockS3{} // returns empty output — no versions or delete markers
+	err := emptyVersionedBucket(context.Background(), client, "my-bucket")
+	if err != nil {
+		t.Fatalf("emptyVersionedBucket() error: %v", err)
+	}
+}
+
+func TestEmptyVersionedBucket_DeletesVersionsAndMarkers(t *testing.T) {
+	var deletedKeys []string
+	client := &mockS3{
+		listVersionFunc: func(_ context.Context, _ *s3.ListObjectVersionsInput, _ ...func(*s3.Options)) (*s3.ListObjectVersionsOutput, error) {
+			return &s3.ListObjectVersionsOutput{
+				Versions: []s3types.ObjectVersion{
+					{Key: aws.String("saves/world.zip"), VersionId: aws.String("v1")},
+				},
+				DeleteMarkers: []s3types.DeleteMarkerEntry{
+					{Key: aws.String("saves/old.zip"), VersionId: aws.String("dm1")},
+				},
+			}, nil
+		},
+		deleteObjectsFunc: func(_ context.Context, params *s3.DeleteObjectsInput, _ ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error) {
+			for _, obj := range params.Delete.Objects {
+				deletedKeys = append(deletedKeys, aws.ToString(obj.Key))
+			}
+			return &s3.DeleteObjectsOutput{}, nil
+		},
+	}
+	err := emptyVersionedBucket(context.Background(), client, "my-bucket")
+	if err != nil {
+		t.Fatalf("emptyVersionedBucket() error: %v", err)
+	}
+	if len(deletedKeys) != 2 {
+		t.Fatalf("expected 2 deleted keys, got %d: %v", len(deletedKeys), deletedKeys)
+	}
+}
+
+func TestEmptyVersionedBucket_ListVersionsError(t *testing.T) {
+	client := &mockS3{
+		listVersionFunc: func(_ context.Context, _ *s3.ListObjectVersionsInput, _ ...func(*s3.Options)) (*s3.ListObjectVersionsOutput, error) {
+			return nil, errors.New("AccessDenied")
+		},
+	}
+	err := emptyVersionedBucket(context.Background(), client, "my-bucket")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestEmptyVersionedBucket_DeleteObjectsError(t *testing.T) {
+	client := &mockS3{
+		listVersionFunc: func(_ context.Context, _ *s3.ListObjectVersionsInput, _ ...func(*s3.Options)) (*s3.ListObjectVersionsOutput, error) {
+			return &s3.ListObjectVersionsOutput{
+				Versions: []s3types.ObjectVersion{
+					{Key: aws.String("saves/world.zip"), VersionId: aws.String("v1")},
+				},
+			}, nil
+		},
+		deleteObjectsFunc: func(_ context.Context, _ *s3.DeleteObjectsInput, _ ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error) {
+			return nil, errors.New("InternalError")
+		},
+	}
+	err := emptyVersionedBucket(context.Background(), client, "my-bucket")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
