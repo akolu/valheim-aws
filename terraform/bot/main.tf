@@ -38,7 +38,6 @@ resource "aws_lambda_function" "bot" {
   environment {
     variables = {
       DISCORD_PUBLIC_KEY = var.discord_public_key
-      AWS_REGION         = var.aws_region
     }
   }
 
