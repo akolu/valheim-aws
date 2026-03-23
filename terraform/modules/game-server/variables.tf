@@ -60,6 +60,12 @@ variable "backup_s3_bucket" {
   type        = string
 }
 
+variable "backup_retention_count" {
+  description = "Number of timestamped backups to retain in S3. Older backups beyond this count are deleted automatically."
+  type        = number
+  default     = 5
+}
+
 variable "enable_eip" {
   description = "Whether to allocate and associate an Elastic IP for the instance."
   type        = bool

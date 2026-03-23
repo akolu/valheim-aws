@@ -44,9 +44,10 @@ locals {
   })
 
   backup_script_content = templatefile("${path.module}/templates/backup.sh.tpl", {
-    game_name    = local.game_name
-    s3_bucket    = var.backup_s3_bucket
-    backup_paths = local.backup_paths
+    game_name              = local.game_name
+    s3_bucket              = var.backup_s3_bucket
+    backup_paths           = local.backup_paths
+    backup_retention_count = var.backup_retention_count
   })
 
   restore_script_content = templatefile("${path.module}/templates/restore.sh.tpl", {
