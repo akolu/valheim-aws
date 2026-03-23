@@ -28,6 +28,17 @@ resource "aws_iam_policy" "deploy_permission_boundary" {
         ]
         Resource = "*"
       },
+      {
+        Sid    = "AllowPassRoleToLambda"
+        Effect = "Allow"
+        Action = "iam:PassRole"
+        Resource = "arn:aws:iam::*:role/bonfire_*"
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "lambda.amazonaws.com"
+          }
+        }
+      },
     ]
   })
 
@@ -81,7 +92,7 @@ resource "aws_iam_role" "admin" {
         }
         Action = "sts:AssumeRole"
         Condition = {
-          BoolIfExists = {
+          Bool = {
             "aws:MultiFactorAuthPresent" = "true"
           }
         }
