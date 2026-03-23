@@ -1,15 +1,15 @@
+data "aws_caller_identity" "current" {}
+
 locals {
   tags = {
     Project   = "bonfire"
     ManagedBy = "terraform"
     Purpose   = "discord-bot"
   }
-}
 
-# IAM role for the Lambda function — managed in terraform/account/ to allow
-# terraform/bot/ to be applied with bonfire-deploy (which has no IAM permissions).
-data "aws_iam_role" "bot_lambda" {
-  name = "bonfire_bot_lambda_role"
+  # IAM role managed in terraform/account/ — referenced by ARN to avoid iam:GetRole
+  # (bonfire-deploy's permission boundary blocks all iam:* including read actions).
+  bot_lambda_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/bonfire_bot_lambda_role"
 }
 
 # Dead letter queue for failed Lambda invocations
@@ -24,7 +24,7 @@ resource "aws_sqs_queue" "bot_dlq" {
 # Lambda function — single Go binary handling all games
 resource "aws_lambda_function" "bot" {
   function_name = "bonfire_bot"
-  role          = data.aws_iam_role.bot_lambda.arn
+  role          = local.bot_lambda_role_arn
   handler       = "bootstrap"
   runtime       = "provided.al2023"
   architectures = ["x86_64"]
