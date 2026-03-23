@@ -74,6 +74,30 @@ resource "aws_iam_role_policy_attachment" "deploy_power_user" {
   policy_arn = "arn:aws:iam::aws:policy/PowerUserAccess"
 }
 
+# PowerUserAccess excludes iam:*, so iam:PassRole must be granted explicitly.
+# Scoped to bonfire_ roles passed to Lambda only.
+resource "aws_iam_role_policy" "deploy_pass_role" {
+  name = "bonfire-deploy-pass-role"
+  role = aws_iam_role.deploy.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "AllowPassRoleToLambda"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = "arn:aws:iam::*:role/bonfire_*"
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "lambda.amazonaws.com"
+          }
+        }
+      },
+    ]
+  })
+}
+
 # Admin role for account-level changes (IAM boundaries, deploy role modifications).
 # Unlike bonfire-deploy-role, this role has full AdministratorAccess but requires MFA.
 # Used only for terraform/account/ applies — never for routine infrastructure deployments.
