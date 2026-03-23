@@ -47,10 +47,7 @@ Create `terraform/bot/terraform.tfvars` with your Discord credentials and game s
 discord_public_key    = "your_public_key_from_developer_portal"
 discord_bot_token     = "your_bot_token"
 discord_app_id        = "your_application_id"
-discord_guild_id      = "your_discord_server_id"  # for guild commands (instant)
 ```
-
-To find your Discord Guild ID: Enable Developer Mode in Discord settings, then right-click your server icon and "Copy Server ID".
 
 ### Step 3: Deploy
 
