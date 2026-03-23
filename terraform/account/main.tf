@@ -97,6 +97,91 @@ resource "aws_iam_role_policy_attachment" "admin_administrator" {
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
+# IAM role for the bonfire bot Lambda function.
+# Lives here (not in terraform/bot/) so that bonfire-deploy can apply terraform/bot/
+# without needing IAM permissions.
+resource "aws_iam_role" "bot_lambda" {
+  name = "bonfire_bot_lambda_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(local.tags, {
+    Name    = "bonfire_bot_lambda_role"
+    Purpose = "discord-bot"
+  })
+}
+
+resource "aws_iam_policy" "bot_lambda" {
+  name        = "bonfire_bot_lambda_policy"
+  description = "IAM policy for Bonfire shared Discord bot Lambda"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "CloudWatchLogs"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+        ]
+        # Log group is created in terraform/bot/; use ARN pattern to avoid cross-stack reference
+        Resource = "arn:aws:logs:${var.aws_region}:*:log-group:/aws/lambda/bonfire_bot:*"
+      },
+      {
+        Sid      = "EC2Describe"
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeInstances"]
+        Resource = "*"
+      },
+      {
+        Sid    = "EC2StartStop"
+        Effect = "Allow"
+        Action = [
+          "ec2:StartInstances",
+          "ec2:StopInstances",
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:ResourceTag/Project" = "bonfire"
+          }
+        }
+      },
+      {
+        Sid      = "SSMReadBonfire"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = "arn:aws:ssm:*:*:parameter/bonfire/*"
+      },
+      {
+        Sid    = "DLQSend"
+        Effect = "Allow"
+        Action = ["sqs:SendMessage"]
+        # DLQ is created in terraform/bot/; use ARN pattern to avoid cross-stack reference
+        Resource = "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:bonfire_bot_dlq"
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "bot_lambda" {
+  role       = aws_iam_role.bot_lambda.name
+  policy_arn = aws_iam_policy.bot_lambda.arn
+}
+
 # Minimal IAM user whose only capability is assuming bonfire-deploy-role and bonfire-admin-role.
 # Long-lived access keys for this user go in ~/.aws/credentials as [bonfire-base].
 resource "aws_iam_user" "base" {

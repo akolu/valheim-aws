@@ -17,3 +17,8 @@ output "permission_boundary_arn" {
   description = "ARN of the deploy permission boundary policy"
   value       = aws_iam_policy.deploy_permission_boundary.arn
 }
+
+output "bot_lambda_role_arn" {
+  description = "ARN of the bonfire bot Lambda execution role"
+  value       = aws_iam_role.bot_lambda.arn
+}

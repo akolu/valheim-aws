@@ -6,85 +6,10 @@ locals {
   }
 }
 
-# IAM role for the Lambda function
-resource "aws_iam_role" "bot_lambda" {
+# IAM role for the Lambda function — managed in terraform/account/ to allow
+# terraform/bot/ to be applied with bonfire-deploy (which has no IAM permissions).
+data "aws_iam_role" "bot_lambda" {
   name = "bonfire_bot_lambda_role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = merge(local.tags, {
-    Name = "bonfire_bot_lambda_role"
-  })
-}
-
-# IAM policy granting the Lambda permissions to read EC2, start/stop instances, and read SSM
-resource "aws_iam_policy" "bot_lambda" {
-  name        = "bonfire_bot_lambda_policy"
-  description = "IAM policy for Bonfire shared Discord bot Lambda"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "CloudWatchLogs"
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents",
-        ]
-        Resource = "${aws_cloudwatch_log_group.bot_lambda.arn}:*"
-      },
-      {
-        Sid    = "EC2Describe"
-        Effect = "Allow"
-        Action = ["ec2:DescribeInstances"]
-        Resource = "*"
-      },
-      {
-        Sid    = "EC2StartStop"
-        Effect = "Allow"
-        Action = [
-          "ec2:StartInstances",
-          "ec2:StopInstances",
-        ]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "aws:ResourceTag/Project" = "bonfire"
-          }
-        }
-      },
-      {
-        Sid    = "SSMReadBonfire"
-        Effect = "Allow"
-        Action = ["ssm:GetParameter"]
-        Resource = "arn:aws:ssm:*:*:parameter/bonfire/*"
-      },
-      {
-        Sid    = "DLQSend"
-        Effect = "Allow"
-        Action = ["sqs:SendMessage"]
-        Resource = aws_sqs_queue.bot_dlq.arn
-      },
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "bot_lambda" {
-  role       = aws_iam_role.bot_lambda.name
-  policy_arn = aws_iam_policy.bot_lambda.arn
 }
 
 # Dead letter queue for failed Lambda invocations
@@ -99,7 +24,7 @@ resource "aws_sqs_queue" "bot_dlq" {
 # Lambda function — single Go binary handling all games
 resource "aws_lambda_function" "bot" {
   function_name = "bonfire_bot"
-  role          = aws_iam_role.bot_lambda.arn
+  role          = data.aws_iam_role.bot_lambda.arn
   handler       = "bootstrap"
   runtime       = "provided.al2023"
   architectures = ["x86_64"]
