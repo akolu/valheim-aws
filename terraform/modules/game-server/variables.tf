@@ -55,12 +55,6 @@ variable "allowed_ssh_cidr_blocks" {
   default     = []
 }
 
-variable "alarm_actions" {
-  description = "List of ARNs to trigger on CloudWatch alarm (e.g. SNS topics)"
-  type        = list(string)
-  default     = []
-}
-
 variable "backup_s3_bucket" {
   description = "S3 bucket for game world backups"
   type        = string
