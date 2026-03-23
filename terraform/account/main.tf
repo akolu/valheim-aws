@@ -8,9 +8,10 @@ locals {
 
 data "aws_caller_identity" "current" {}
 
-# Permission boundary: attached to bonfire-deploy-role to block all IAM operations.
-# The deploy role can do almost anything (PowerUserAccess) but cannot touch IAM at all.
-# Account-level IAM changes are handled by bonfire-admin-role instead.
+# Permission boundary: attached to bonfire-deploy-role to restrict IAM operations.
+# The deploy role can do almost anything (PowerUserAccess) but cannot touch IAM except
+# for scoped game server resources (EC2 instance profiles, CloudWatch/SSM/S3 roles).
+# Broad account-level IAM changes are handled by bonfire-admin-role instead.
 resource "aws_iam_policy" "deploy_permission_boundary" {
   name        = "bonfire-deploy-permission-boundary"
   description = "Permission boundary for bonfire-deploy-role: allows PowerUser actions but blocks all IAM, Organizations, and account operations"
@@ -38,6 +39,31 @@ resource "aws_iam_policy" "deploy_permission_boundary" {
             "iam:PassedToService" = "lambda.amazonaws.com"
           }
         }
+      },
+      {
+        Sid    = "AllowGameServerIAMResources"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole",
+          "iam:DeleteRole",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:CreatePolicy",
+          "iam:DeletePolicy",
+          "iam:CreateInstanceProfile",
+          "iam:DeleteInstanceProfile",
+          "iam:AddRoleToInstanceProfile",
+          "iam:RemoveRoleFromInstanceProfile",
+          "iam:PassRole",
+          "iam:GetRole",
+          "iam:GetPolicy",
+          "iam:ListAttachedRolePolicies",
+        ]
+        Resource = [
+          "arn:aws:iam::*:role/*-server-role",
+          "arn:aws:iam::*:policy/*-s3-backup-policy",
+          "arn:aws:iam::*:instance-profile/*-profile",
+        ]
       },
     ]
   })
