@@ -145,6 +145,21 @@ bonfire status valheim
 #   Long-term Archives: 3 snapshots, latest 2024-11-01T12:00:00Z
 ```
 
+### `bonfire update`
+
+Pulls the latest source from `origin/main` and reinstalls the CLI binary.
+
+```bash
+bonfire update
+# ==> Pulling latest source...
+# Already up to date.
+# ==> Reinstalling bonfire CLI...
+# ✓ bonfire updated successfully
+```
+
+Requires the bonfire repository to be accessible. If the binary can't locate the repo
+automatically, set `BONFIRE_REPO_ROOT` to the repo root.
+
 ### `bonfire completion <shell>`
 
 Generates shell completion scripts. Cobra provides this automatically.
