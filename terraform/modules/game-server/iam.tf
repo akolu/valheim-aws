@@ -1,6 +1,6 @@
 # Create IAM role for game server (CloudWatch metrics and S3 backups)
 resource "aws_iam_role" "game_server_role" {
-  name = "${local.instance_name}-role"
+  name = "bonfire-${local.instance_name}-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -16,7 +16,7 @@ resource "aws_iam_role" "game_server_role" {
   })
 
   tags = merge(var.tags, {
-    Name = "${local.instance_name}-role"
+    Name = "bonfire-${local.instance_name}-role"
   })
 }
 
@@ -34,7 +34,7 @@ resource "aws_iam_role_policy_attachment" "game_server_ssm" {
 
 # Create S3 backup policy
 resource "aws_iam_policy" "game_server_s3_backup" {
-  name        = "${local.instance_name}-s3-backup-policy"
+  name        = "bonfire-${local.instance_name}-s3-backup-policy"
   description = "Policy to allow S3 access for ${local.display_name} backups"
 
   policy = jsonencode({
@@ -64,10 +64,10 @@ resource "aws_iam_role_policy_attachment" "game_server_s3_backup" {
 
 # Create instance profile
 resource "aws_iam_instance_profile" "game_server_profile" {
-  name = "${local.instance_name}-profile"
+  name = "bonfire-${local.instance_name}-profile"
   role = aws_iam_role.game_server_role.name
 
   tags = merge(var.tags, {
-    Name = "${local.instance_name}-profile"
+    Name = "bonfire-${local.instance_name}-profile"
   })
 }

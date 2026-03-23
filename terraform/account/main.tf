@@ -60,9 +60,9 @@ resource "aws_iam_policy" "deploy_permission_boundary" {
           "iam:ListAttachedRolePolicies",
         ]
         Resource = [
-          "arn:aws:iam::*:role/*-server-role",
-          "arn:aws:iam::*:policy/*-s3-backup-policy",
-          "arn:aws:iam::*:instance-profile/*-profile",
+          "arn:aws:iam::*:role/bonfire-*-server-role",
+          "arn:aws:iam::*:policy/bonfire-*-s3-backup-policy",
+          "arn:aws:iam::*:instance-profile/bonfire-*-profile",
         ]
       },
     ]
@@ -153,9 +153,9 @@ resource "aws_iam_role_policy" "deploy_game_server_iam" {
           "iam:ListAttachedRolePolicies",
         ]
         Resource = [
-          "arn:aws:iam::*:role/*-server-role",
-          "arn:aws:iam::*:policy/*-s3-backup-policy",
-          "arn:aws:iam::*:instance-profile/*-profile",
+          "arn:aws:iam::*:role/bonfire-*-server-role",
+          "arn:aws:iam::*:policy/bonfire-*-s3-backup-policy",
+          "arn:aws:iam::*:instance-profile/bonfire-*-profile",
         ]
       },
     ]
