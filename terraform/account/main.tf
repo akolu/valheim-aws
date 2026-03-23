@@ -41,33 +41,9 @@ resource "aws_iam_policy" "deploy_permission_boundary" {
         }
       },
       {
-        Sid    = "AllowGameServerIAMResources"
-        Effect = "Allow"
-        Action = [
-          "iam:CreateRole",
-          "iam:DeleteRole",
-          "iam:AttachRolePolicy",
-          "iam:DetachRolePolicy",
-          "iam:CreatePolicy",
-          "iam:DeletePolicy",
-          "iam:CreateInstanceProfile",
-          "iam:DeleteInstanceProfile",
-          "iam:AddRoleToInstanceProfile",
-          "iam:RemoveRoleFromInstanceProfile",
-          "iam:PassRole",
-          "iam:GetRole",
-          "iam:GetPolicy",
-          "iam:ListAttachedRolePolicies",
-          "iam:TagRole",
-          "iam:UntagRole",
-          "iam:GetPolicyVersion",
-          "iam:ListPolicyVersions",
-          "iam:TagPolicy",
-          "iam:UntagPolicy",
-          "iam:GetInstanceProfile",
-          "iam:TagInstanceProfile",
-          "iam:UpdateAssumeRolePolicy",
-        ]
+        Sid      = "AllowGameServerIAMResources"
+        Effect   = "Allow"
+        Action   = "iam:*"
         Resource = [
           "arn:aws:iam::*:role/bonfire-*-server-role",
           "arn:aws:iam::*:policy/bonfire-*-s3-backup-policy",
@@ -144,32 +120,9 @@ resource "aws_iam_role_policy" "deploy_game_server_iam" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "AllowGameServerIAMResources"
-        Effect = "Allow"
-        Action = [
-          "iam:CreateRole",
-          "iam:DeleteRole",
-          "iam:AttachRolePolicy",
-          "iam:DetachRolePolicy",
-          "iam:CreatePolicy",
-          "iam:DeletePolicy",
-          "iam:CreateInstanceProfile",
-          "iam:DeleteInstanceProfile",
-          "iam:AddRoleToInstanceProfile",
-          "iam:RemoveRoleFromInstanceProfile",
-          "iam:GetRole",
-          "iam:GetPolicy",
-          "iam:ListAttachedRolePolicies",
-          "iam:TagRole",
-          "iam:UntagRole",
-          "iam:GetPolicyVersion",
-          "iam:ListPolicyVersions",
-          "iam:TagPolicy",
-          "iam:UntagPolicy",
-          "iam:GetInstanceProfile",
-          "iam:TagInstanceProfile",
-          "iam:UpdateAssumeRolePolicy",
-        ]
+        Sid      = "AllowGameServerIAMResources"
+        Effect   = "Allow"
+        Action   = "iam:*"
         Resource = [
           "arn:aws:iam::*:role/bonfire-*-server-role",
           "arn:aws:iam::*:policy/bonfire-*-s3-backup-policy",
