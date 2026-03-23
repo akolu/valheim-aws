@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -10,12 +13,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Package-level vars for testability.
+var (
+	tfPlanFn = terraformPlan
+	tfInitFn = terraformInit
+)
+
 var provisionCmd = &cobra.Command{
 	Use:   "provision <game>",
-	Short: "Provision a game server (terraform init + apply)",
-	Long: `Provision a game server by running terraform init and apply for the
-specified game workspace. If an archive exists in the long-term bucket, the
-latest save is selected automatically and its location is printed. If no
+	Short: "Provision a game server (terraform init + plan + apply)",
+	Long: `Provision a game server by running terraform init, plan, and apply for the
+specified game workspace. The terraform plan is shown for review before any
+infrastructure changes are made. If an archive exists in the long-term bucket,
+the latest save is selected automatically and its location is printed. If no
 archive exists, the server starts fresh.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runProvision,
@@ -28,26 +38,58 @@ func runProvision(cmd *cobra.Command, args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	cfg, err := awsConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("loading AWS config: %w", err)
+	}
+	return provisionGame(ctx, s3.NewFromConfig(cfg), cfg.Region, game, os.Stdin)
+}
 
+// provisionGame runs terraform init, plans, prompts for confirmation, then applies.
+// Accepts a client and stdin for testability.
+func provisionGame(ctx context.Context, s3Client s3API, region, game string, stdin io.Reader) error {
 	dir, err := terraformDir(game)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Provisioning %s...\n", game)
-	if err := terraformInit(dir); err != nil {
+	fmt.Printf("Initializing %s...\n", game)
+	if err := tfInitFn(dir); err != nil {
 		return err
 	}
-	if err := terraformApply(dir); err != nil {
-		return err
-	}
-	fmt.Printf("✓ %s provisioned\n", game)
 
-	cfg, err := awsConfig(ctx)
+	planFile, err := os.CreateTemp("", fmt.Sprintf("bonfire-provision-%s-*.tfplan", game))
 	if err != nil {
-		return fmt.Errorf("loading AWS config: %w", err)
+		return fmt.Errorf("creating plan file: %w", err)
 	}
-	return autoRestoreFromLongterm(ctx, s3.NewFromConfig(cfg), game, cfg.Region)
+	planFile.Close()
+	planPath := planFile.Name()
+	defer os.Remove(planPath)
+
+	fmt.Printf("\nPlanning %s infrastructure...\n", game)
+	if err := tfPlanFn(dir, planPath); err != nil {
+		return fmt.Errorf("terraform plan failed: %w", err)
+	}
+
+	fmt.Printf("\nType the game name to confirm: ")
+	reader := bufio.NewReader(stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("reading confirmation: %w", err)
+	}
+	input = strings.TrimSpace(input)
+
+	if input != game {
+		fmt.Println("Aborted.")
+		return nil
+	}
+
+	if err := tfApplyPlanFn(dir, planPath); err != nil {
+		return fmt.Errorf("terraform apply failed: %w", err)
+	}
+
+	fmt.Printf("✓ %s provisioned\n", game)
+	return autoRestoreFromLongterm(ctx, s3Client, game, region)
 }
 
 // autoRestoreFromLongterm checks for an existing archive in the long-term bucket

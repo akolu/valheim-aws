@@ -89,6 +89,11 @@ func terraformDestroy(dir string) error {
 	return runTerraform(dir, "destroy", "-auto-approve")
 }
 
+// terraformPlan runs terraform plan, saving the plan to planFile.
+func terraformPlan(dir, planFile string) error {
+	return runTerraform(dir, "plan", "-out="+planFile)
+}
+
 // terraformPlanDestroy runs terraform plan -destroy, saving the plan to planFile.
 func terraformPlanDestroy(dir, planFile string) error {
 	return runTerraform(dir, "plan", "-destroy", "-out="+planFile)
