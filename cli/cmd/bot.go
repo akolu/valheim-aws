@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -18,6 +19,21 @@ const discordAPIBase = "https://discord.com/api/v10"
 var botCmd = &cobra.Command{
 	Use:   "bot",
 	Short: "Manage Discord bot configuration",
+}
+
+var botDeployCmd = &cobra.Command{
+	Use:   "deploy",
+	Short: "Build, deploy, and register the Discord bot",
+	Long: `Build the Lambda binary, apply terraform/bot/, and register Discord commands.
+
+Runs the full deployment pipeline in sequence:
+  1. make build        — compiles the Go Lambda binary and packages it into a zip
+  2. terraform apply   — deploys the Lambda and API Gateway infrastructure
+  3. bot update        — registers slash commands and sets the interaction endpoint
+
+Requires AWS_PROFILE=bonfire-deploy (or equivalent credentials in the environment).`,
+	Args: cobra.NoArgs,
+	RunE: runBotDeploy,
 }
 
 var botUpdateCmd = &cobra.Command{
@@ -33,7 +49,36 @@ Registers commands for all games in a single global PUT.`,
 }
 
 func init() {
+	botCmd.AddCommand(botDeployCmd)
 	botCmd.AddCommand(botUpdateCmd)
+}
+
+func runBotDeploy(cmd *cobra.Command, args []string) error {
+	if err := checkBotDeployed(); err != nil {
+		return err
+	}
+	root, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("==> Building Lambda binary...")
+	makeCmd := exec.Command("make", "build")
+	makeCmd.Dir = filepath.Join(root, "discord_bot", "go")
+	makeCmd.Stdout = os.Stdout
+	makeCmd.Stderr = os.Stderr
+	if err := makeCmd.Run(); err != nil {
+		return fmt.Errorf("make build: %w", err)
+	}
+
+	fmt.Println("==> Applying terraform/bot/...")
+	botDir := filepath.Join(root, "terraform", "bot")
+	if err := runTerraform(botDir, "apply"); err != nil {
+		return err
+	}
+
+	fmt.Println("==> Registering Discord commands...")
+	return runBotUpdate(cmd, args)
 }
 
 // checkBotDeployed returns a friendly error if terraform/bot/terraform.tfvars
