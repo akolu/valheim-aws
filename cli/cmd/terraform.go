@@ -99,10 +99,22 @@ func terraformApplyPlan(dir, planFile string) error {
 	return runTerraform(dir, "apply", planFile)
 }
 
+// terraformEnv returns an environment slice for terraform subprocesses. It starts
+// from the current process environment and ensures AWS_PROFILE is set so that
+// terraform's credential chain works even when bonfire was invoked without it.
+func terraformEnv() []string {
+	env := os.Environ()
+	if os.Getenv("AWS_PROFILE") == "" {
+		env = append(env, "AWS_PROFILE=bonfire-deploy")
+	}
+	return env
+}
+
 // terraformOutput returns a map of terraform output values for the given workspace.
 func terraformOutput(dir string) (map[string]terraformOutputValue, error) {
 	cmd := exec.Command("terraform", "output", "-json")
 	cmd.Dir = dir
+	cmd.Env = terraformEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("terraform output: %w", err)
@@ -132,6 +144,7 @@ func (v terraformOutputValue) String() string {
 func runTerraform(dir string, args ...string) error {
 	cmd := exec.Command("terraform", args...)
 	cmd.Dir = dir
+	cmd.Env = terraformEnv()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin

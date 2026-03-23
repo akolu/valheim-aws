@@ -81,6 +81,41 @@ func TestParseTFVars_FileNotFound(t *testing.T) {
 	}
 }
 
+func TestTerraformEnv_DefaultsAWSProfile(t *testing.T) {
+	t.Setenv("AWS_PROFILE", "")
+	env := terraformEnv()
+	found := false
+	for _, e := range env {
+		if e == "AWS_PROFILE=bonfire-deploy" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("terraformEnv() did not set AWS_PROFILE=bonfire-deploy when AWS_PROFILE was unset")
+	}
+}
+
+func TestTerraformEnv_PreservesAWSProfile(t *testing.T) {
+	t.Setenv("AWS_PROFILE", "my-custom-profile")
+	env := terraformEnv()
+	for _, e := range env {
+		if e == "AWS_PROFILE=bonfire-deploy" {
+			t.Error("terraformEnv() overwrote an explicitly set AWS_PROFILE with the default")
+		}
+	}
+	found := false
+	for _, e := range env {
+		if e == "AWS_PROFILE=my-custom-profile" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("terraformEnv() did not preserve AWS_PROFILE=my-custom-profile")
+	}
+}
+
 func TestBucketNames(t *testing.T) {
 	tests := []struct {
 		game    string
