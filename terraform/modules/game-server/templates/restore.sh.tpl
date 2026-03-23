@@ -37,7 +37,43 @@ if [ ! "$(ls -A $DATA_PATH 2>/dev/null)" ]; then
     rm -rf $BACKUP_DIR
     rm -f /tmp/$${GAME_NAME}_backup.tar.gz
   else
-    echo "Warning: No backup found in S3 bucket $S3_BUCKET"
+    echo "No backup found in S3 bucket $S3_BUCKET. Checking long-term archive bucket..."
+
+    # Fall back to long-term archive bucket (pattern: <game>-long-term-backups)
+    LT_BUCKET="$${GAME_NAME}-long-term-backups"
+
+    # Archives are stored as <timestamp>/<game>_backup_latest.tar.gz; pick the lexicographically
+    # last (most recent) key matching the _latest pattern.
+    LT_KEY=$(aws s3 ls "s3://$LT_BUCKET/" --recursive 2>/dev/null \
+      | grep "$${GAME_NAME}_backup_latest.tar.gz" \
+      | sort | tail -1 | awk '{print $NF}')
+
+    if [ -n "$LT_KEY" ]; then
+      echo "Found long-term archive: s3://$LT_BUCKET/$LT_KEY"
+      if aws s3 cp "s3://$LT_BUCKET/$LT_KEY" "/tmp/$${GAME_NAME}_backup.tar.gz"; then
+        echo "Long-term archive downloaded successfully"
+
+        # Extract backup
+        mkdir -p $BACKUP_DIR
+        tar -xzf "/tmp/$${GAME_NAME}_backup.tar.gz" -C "/tmp"
+
+        # Copy restored files to data path
+        cp -r $BACKUP_DIR/* "$DATA_PATH/" 2>/dev/null || echo "Warning: Failed to copy restored files"
+
+        # Set ownership (container typically runs as UID 1000)
+        chown -R 1000:1000 "$DATA_PATH"
+
+        echo "Data successfully restored from long-term archive"
+
+        # Cleanup
+        rm -rf $BACKUP_DIR
+        rm -f /tmp/$${GAME_NAME}_backup.tar.gz
+      else
+        echo "Warning: Failed to download long-term archive from s3://$LT_BUCKET/$LT_KEY"
+      fi
+    else
+      echo "Warning: No archive found in long-term bucket s3://$LT_BUCKET"
+    fi
   fi
 else
   echo "Existing data found. No restoration needed."

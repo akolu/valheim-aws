@@ -62,6 +62,35 @@ resource "aws_iam_role_policy_attachment" "game_server_s3_backup" {
   policy_arn = aws_iam_policy.game_server_s3_backup.arn
 }
 
+# Create read-only policy for long-term archive bucket (restore fallback on fresh provision)
+resource "aws_iam_policy" "game_server_s3_longterm_read" {
+  name        = "bonfire-${local.instance_name}-s3-longterm-read-policy"
+  description = "Policy to allow read access to the long-term archive bucket for ${local.display_name} restore fallback"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Effect = "Allow"
+        Resource = [
+          "arn:aws:s3:::${local.game_name}-long-term-backups",
+          "arn:aws:s3:::${local.game_name}-long-term-backups/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Attach long-term read policy to the role
+resource "aws_iam_role_policy_attachment" "game_server_s3_longterm_read" {
+  role       = aws_iam_role.game_server_role.name
+  policy_arn = aws_iam_policy.game_server_s3_longterm_read.arn
+}
+
 # Create instance profile
 resource "aws_iam_instance_profile" "game_server_profile" {
   name = "bonfire-${local.instance_name}-profile"
