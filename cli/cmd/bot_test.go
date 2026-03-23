@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -450,4 +453,151 @@ func (c *captureBodyClient) Do(req *http.Request) (*http.Response, error) {
 		req.Body = io.NopCloser(strings.NewReader(string(b)))
 	}
 	return c.inner.Do(req)
+}
+
+// --- checkBotDeployed tests ---
+
+func TestCheckBotDeployed_NotDeployed(t *testing.T) {
+	repoRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, "terraform", "games"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BONFIRE_REPO_ROOT", repoRoot)
+
+	err := checkBotDeployed()
+	if err == nil {
+		t.Fatal("expected error when terraform.tfvars missing, got nil")
+	}
+}
+
+func TestCheckBotDeployed_Deployed(t *testing.T) {
+	repoRoot := t.TempDir()
+	botDir := filepath.Join(repoRoot, "terraform", "bot")
+	if err := os.MkdirAll(botDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repoRoot, "terraform", "games"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(botDir, "terraform.tfvars"), []byte(`discord_application_id = "123"`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BONFIRE_REPO_ROOT", repoRoot)
+
+	if err := checkBotDeployed(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// setupBotDeployRoot creates a minimal fake repo root with terraform.tfvars and
+// returns its path. Callers must set BONFIRE_REPO_ROOT themselves.
+func setupBotDeployRoot(t *testing.T) string {
+	t.Helper()
+	repoRoot := t.TempDir()
+	for _, dir := range []string{
+		filepath.Join(repoRoot, "terraform", "games"),
+		filepath.Join(repoRoot, "terraform", "bot"),
+		filepath.Join(repoRoot, "discord_bot", "go"),
+	} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tfvars := filepath.Join(repoRoot, "terraform", "bot", "terraform.tfvars")
+	if err := os.WriteFile(tfvars, []byte(`discord_application_id = "123"`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return repoRoot
+}
+
+// writeFakeScript writes an executable shell script to dir/name that exits with exitCode.
+func writeFakeScript(t *testing.T, dir, name string, exitCode int) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "#!/bin/sh\nexit " + strings.TrimSpace(strings.Repeat("0", 0)+fmt.Sprintf("%d", exitCode)) + "\n"
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte(content), 0755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// --- runBotDeploy edge case tests ---
+
+// TestRunBotDeploy_MissingTFVars verifies that the friendly "not deployed yet"
+// error is returned before any subprocess is launched.
+func TestRunBotDeploy_MissingTFVars(t *testing.T) {
+	repoRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, "terraform", "games"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BONFIRE_REPO_ROOT", repoRoot)
+
+	err := runBotDeploy(nil, nil)
+	if err == nil {
+		t.Fatal("expected error when terraform.tfvars missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "Bot not deployed yet") {
+		t.Errorf("error should mention 'Bot not deployed yet', got: %v", err)
+	}
+}
+
+// TestRunBotDeploy_MakeNotFound verifies that an error is returned when the
+// make binary is not present in PATH.
+func TestRunBotDeploy_MakeNotFound(t *testing.T) {
+	repoRoot := setupBotDeployRoot(t)
+	t.Setenv("BONFIRE_REPO_ROOT", repoRoot)
+	// Point PATH to an empty directory so make (and terraform) are not found.
+	emptyBin := t.TempDir()
+	t.Setenv("PATH", emptyBin)
+
+	err := runBotDeploy(nil, nil)
+	if err == nil {
+		t.Fatal("expected error when make not in PATH, got nil")
+	}
+}
+
+// TestRunBotDeploy_MakeBuildFails_StopsPipeline verifies that a non-zero exit
+// from `make build` causes an error and prevents terraform from running.
+func TestRunBotDeploy_MakeBuildFails_StopsPipeline(t *testing.T) {
+	repoRoot := setupBotDeployRoot(t)
+	t.Setenv("BONFIRE_REPO_ROOT", repoRoot)
+
+	// Create a bin dir with a fake make that exits 1, but no terraform.
+	// If runBotDeploy incorrectly calls terraform after make fails, the test
+	// would still pass here — but the pipeline would continue past the error,
+	// which is wrong. We verify the error message identifies make as the failure.
+	binDir := t.TempDir()
+	writeFakeScript(t, binDir, "make", 1)
+	t.Setenv("PATH", binDir)
+
+	err := runBotDeploy(nil, nil)
+	if err == nil {
+		t.Fatal("expected error when make build fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "make build") {
+		t.Errorf("error should mention 'make build', got: %v", err)
+	}
+}
+
+// TestRunBotDeploy_TerraformNotFound verifies that an error is returned when
+// terraform is not present in PATH (after make build succeeds).
+func TestRunBotDeploy_TerraformNotFound(t *testing.T) {
+	repoRoot := setupBotDeployRoot(t)
+	t.Setenv("BONFIRE_REPO_ROOT", repoRoot)
+
+	// Fake make that exits 0 (build succeeds), but no terraform binary.
+	binDir := t.TempDir()
+	writeFakeScript(t, binDir, "make", 0)
+	t.Setenv("PATH", binDir)
+
+	err := runBotDeploy(nil, nil)
+	if err == nil {
+		t.Fatal("expected error when terraform not in PATH, got nil")
+	}
+	// The error should come from terraform, not make.
+	if strings.Contains(err.Error(), "make build") {
+		t.Errorf("error should not be from make build: %v", err)
+	}
 }
