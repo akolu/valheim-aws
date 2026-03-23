@@ -45,8 +45,9 @@ if [ ! "$(ls -A $DATA_PATH 2>/dev/null)" ]; then
     # Archives are stored as <timestamp>/<game>_backup_latest.tar.gz; pick the lexicographically
     # last (most recent) key matching the _latest pattern.
     LT_KEY=$(aws s3 ls "s3://$LT_BUCKET/" --recursive 2>/dev/null \
-      | grep "$${GAME_NAME}_backup_latest.tar.gz" \
-      | sort | tail -1 | awk '{print $NF}')
+      | awk '{print $NF}' \
+      | grep "$${GAME_NAME}_backup_latest\.tar\.gz" \
+      | sort | tail -1)
 
     if [ -n "$LT_KEY" ]; then
       echo "Found long-term archive: s3://$LT_BUCKET/$LT_KEY"
