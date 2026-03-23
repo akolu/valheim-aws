@@ -58,6 +58,15 @@ resource "aws_iam_policy" "deploy_permission_boundary" {
           "iam:GetRole",
           "iam:GetPolicy",
           "iam:ListAttachedRolePolicies",
+          "iam:TagRole",
+          "iam:UntagRole",
+          "iam:GetPolicyVersion",
+          "iam:ListPolicyVersions",
+          "iam:TagPolicy",
+          "iam:UntagPolicy",
+          "iam:GetInstanceProfile",
+          "iam:TagInstanceProfile",
+          "iam:UpdateAssumeRolePolicy",
         ]
         Resource = [
           "arn:aws:iam::*:role/bonfire-*-server-role",
@@ -151,6 +160,15 @@ resource "aws_iam_role_policy" "deploy_game_server_iam" {
           "iam:GetRole",
           "iam:GetPolicy",
           "iam:ListAttachedRolePolicies",
+          "iam:TagRole",
+          "iam:UntagRole",
+          "iam:GetPolicyVersion",
+          "iam:ListPolicyVersions",
+          "iam:TagPolicy",
+          "iam:UntagPolicy",
+          "iam:GetInstanceProfile",
+          "iam:TagInstanceProfile",
+          "iam:UpdateAssumeRolePolicy",
         ]
         Resource = [
           "arn:aws:iam::*:role/bonfire-*-server-role",
