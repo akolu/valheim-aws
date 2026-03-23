@@ -124,6 +124,44 @@ resource "aws_iam_role_policy" "deploy_pass_role" {
   })
 }
 
+# PowerUserAccess excludes iam:*, so game server IAM actions must be granted explicitly.
+# Mirrors the AllowGameServerIAMResources statement in the permission boundary — both the
+# boundary AND an identity-based policy must allow an action for it to be permitted.
+resource "aws_iam_role_policy" "deploy_game_server_iam" {
+  name = "bonfire-deploy-game-server-iam"
+  role = aws_iam_role.deploy.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowGameServerIAMResources"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole",
+          "iam:DeleteRole",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:CreatePolicy",
+          "iam:DeletePolicy",
+          "iam:CreateInstanceProfile",
+          "iam:DeleteInstanceProfile",
+          "iam:AddRoleToInstanceProfile",
+          "iam:RemoveRoleFromInstanceProfile",
+          "iam:GetRole",
+          "iam:GetPolicy",
+          "iam:ListAttachedRolePolicies",
+        ]
+        Resource = [
+          "arn:aws:iam::*:role/*-server-role",
+          "arn:aws:iam::*:policy/*-s3-backup-policy",
+          "arn:aws:iam::*:instance-profile/*-profile",
+        ]
+      },
+    ]
+  })
+}
+
 # Admin role for account-level changes (IAM boundaries, deploy role modifications).
 # Unlike bonfire-deploy-role, this role has full AdministratorAccess but requires MFA.
 # Used only for terraform/account/ applies — never for routine infrastructure deployments.
