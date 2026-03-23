@@ -14,7 +14,7 @@ Commands use the format `/<game> <action>`:
 - `/<game> start` - Start the server (authorized users only)
 - `/<game> stop` - Stop the server (authorized users only)
 - `/<game> help` - Show available commands
-- `/<game> hello` - Say hello
+- `/<game> hello` - Check bot connectivity and your authorization status
 
 For example: `/valheim start`, `/satisfactory status`, `/valheim hello`
 
@@ -66,23 +66,64 @@ To update slash commands or the interaction endpoint without redeploying the Lam
 AWS_PROFILE=bonfire-deploy bonfire bot update
 ```
 
+### Step 4: Post-Deployment Authorization
+
+After deployment, configure who can use the bot via the `bonfire bot` CLI:
+
+**Allow your Discord server (guild) to use the bot:**
+
+```bash
+bonfire bot trust <guild_id>
+```
+
+To find your guild ID: Enable Developer Mode in Discord settings, then right-click your server icon and "Copy Server ID".
+
+**Grant users permission to start/stop servers:**
+
+```bash
+bonfire bot grant <game> <user_id>
+```
+
+To find a user ID: Enable Developer Mode in Discord, right-click the user's name, "Copy User ID".
+
+For example:
+
+```bash
+bonfire bot trust 123456789012345678
+bonfire bot grant satisfactory 987654321098765432
+```
+
+## Authorization
+
+The bot uses an SSM-backed ACL system:
+
+- **Guild allowlist** — stored at `/bonfire/allowed_guilds` in SSM. Only guilds in this list can use the bot. Add guilds with `bonfire bot trust <guild_id>`.
+- **Per-game user lists** — stored at `/bonfire/<game>/authorized_users` in SSM. Only users in this list can start/stop servers for that game. Manage with `bonfire bot grant/revoke <game> <user_id>`.
+
+Commands are registered **globally** (not guild-specific) and are available in all servers where the bot is invited. Access control is enforced at runtime via the allowlists above.
+
+Use `/<game> hello` to check bot connectivity and see your authorization status for a game.
+
 ## Testing
 
 Try the commands in your Discord server:
 
 ```
+/satisfactory hello
 /satisfactory status
 /satisfactory start
 /satisfactory stop
 /satisfactory hello
 ```
 
+`/<game> hello` is a good first test — it shows whether the bot is reachable and whether you are authorized.
+
 ## Troubleshooting
 
 ### Commands Not Appearing
 
-- **Guild commands** appear instantly but only in the specified server
-- **Global commands** take up to an hour to propagate
+- Global commands can take up to an hour to propagate after registration
+- Commands are registered globally and will appear in all servers where the bot is invited
 - Run `bonfire bot update` to re-register commands
 
 ### "Interaction Failed" Error
@@ -98,10 +139,22 @@ Try the commands in your Discord server:
 
 ### Permission Denied on Start/Stop
 
-- Add your Discord user ID to `discord_authorized_users` in terraform.tfvars
+- Grant your Discord user ID access using the CLI:
+  ```bash
+  bonfire bot grant <game> <user_id>
+  ```
 - To find your user ID: Enable Developer Mode in Discord, right-click your name, "Copy User ID"
-- Re-run `bonfire bot deploy` after updating
-- Note: if `discord_authorized_users` is empty, all users are denied
+- Use `/<game> hello` to confirm your authorization status after granting access
+
+### Bot Not Available in This Server
+
+If the bot responds with "This bot is not available in this server", the guild has not been added to the allowlist:
+
+```bash
+bonfire bot trust <guild_id>
+```
+
+To find your guild ID: Enable Developer Mode in Discord settings, right-click your server icon and "Copy Server ID".
 
 ## Development
 
