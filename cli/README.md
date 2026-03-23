@@ -19,6 +19,7 @@ cli/
     ├── archive.go   — long-term archive helpers
     ├── bot.go       — `bonfire bot deploy` / `bonfire bot update` (bot deployment and command registration)
     ├── bot_auth.go  — `bonfire bot grant/revoke/trust/untrust` (SSM-backed ACLs)
+    ├── update.go    — `bonfire update` (pull latest source and reinstall CLI)
     └── terraform.go — terraform invocation helpers, parseTFVars, availableGames
 ```
 
@@ -33,6 +34,7 @@ rootCmd  (root.go)
 ├── status    (status.go)
 ├── provision (provision.go)
 ├── retire    (retire.go)
+├── update    (update.go)
 └── bot       (bot.go)
     ├── deploy   (bot.go)
     ├── update   (bot.go)
@@ -88,6 +90,17 @@ AWS_PROFILE=bonfire-deploy bonfire bot deploy
 Updates the Discord interaction endpoint and re-registers slash commands without rebuilding
 or re-deploying the Lambda. Safe to re-run at any time — skips the Discord API call if
 neither the endpoint nor the command list has changed.
+
+## `bonfire update`
+
+Pulls the latest source from `origin/main` and reinstalls the CLI binary:
+
+1. `git pull` — updates the local repository
+2. `make install` — rebuilds and installs the `bonfire` binary
+
+```bash
+bonfire update
+```
 
 ## Key Environment Variables
 

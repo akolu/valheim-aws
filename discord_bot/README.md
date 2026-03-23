@@ -4,7 +4,7 @@ A Discord bot for controlling game servers on AWS EC2 spot instances.
 
 ## Overview
 
-This Discord bot allows your play group to control game servers running on AWS EC2 using slash commands. The bot is implemented as an AWS Lambda function (Go, `provided.al2023` runtime) that communicates with Discord via API Gateway. Each game server requires its own Discord application and bot instance.
+This Discord bot allows your play group to control game servers running on AWS EC2 using slash commands. The bot is implemented as a single shared AWS Lambda function (Go, `provided.al2023` runtime) that handles all games. It communicates with Discord via API Gateway.
 
 ## Features
 
@@ -14,23 +14,23 @@ Commands use the format `/<game> <action>`:
 - `/<game> start` - Start the server (authorized users only)
 - `/<game> stop` - Stop the server (authorized users only)
 - `/<game> help` - Show available commands
+- `/<game> hello` - Say hello
 
-For example: `/valheim start`, `/satisfactory status`
+For example: `/valheim start`, `/satisfactory status`, `/valheim hello`
 
 ## Prerequisites
 
 - Go 1.25.6 or later
 - AWS CLI configured with appropriate credentials
 - Terraform installed
-- curl (for registering slash commands)
-- A deployed game server (you'll need the EC2 instance ID)
+- The `bonfire` CLI installed (`make install` in `cli/`)
 
 ## Setup
 
 ### Step 1: Create a Discord Application
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
-2. Click "New Application" and give it a name (e.g., "Bonfire Satisfactory")
+2. Click "New Application" and give it a name (e.g., "Bonfire")
 3. Note down the **Application ID** and **Public Key** from the "General Information" page
 4. Go to "Bot" in the sidebar and click "Add Bot"
 5. Click "Reset Token" and copy the **Bot Token** (keep it secret!)
@@ -39,75 +39,32 @@ For example: `/valheim start`, `/satisfactory status`
    - No bot permissions needed (the bot only responds to slash commands)
 7. Copy the generated URL and open it to invite the bot to your Discord server
 
-### Step 2: Configure Environment Variables
+### Step 2: Configure terraform.tfvars
 
-```bash
-cd discord_bot
-cp .env.example .env
-```
+Create `terraform/bot/terraform.tfvars` with your Discord credentials and game server details:
 
-Edit `.env` with your values:
-
-```bash
-# Required: The game this bot controls (e.g., valheim, satisfactory)
-GAME_NAME=satisfactory
-
-# Required: From Discord Developer Portal
-DISCORD_BOT_TOKEN=your_bot_token
-DISCORD_APP_ID=your_application_id
-DISCORD_PUBLIC_KEY=your_public_key
-
-# Required for guild commands (recommended for testing)
-DISCORD_GUILD_ID=your_discord_server_id
+```hcl
+discord_public_key    = "your_public_key_from_developer_portal"
+discord_bot_token     = "your_bot_token"
+discord_app_id        = "your_application_id"
+discord_guild_id      = "your_discord_server_id"  # for guild commands (instant)
 ```
 
 To find your Discord Guild ID: Enable Developer Mode in Discord settings, then right-click your server icon and "Copy Server ID".
 
-### Step 3: Register Slash Commands
+### Step 3: Deploy
 
 ```bash
-./register-commands.sh
+AWS_PROFILE=bonfire-deploy bonfire bot deploy
 ```
 
-This registers `/<game>` commands to your Discord server. You should see them appear immediately.
+This runs the full pipeline: build Lambda binary → `terraform apply` → register slash commands → set Discord interaction endpoint.
 
-For global commands (all servers, takes up to an hour to propagate):
+To update slash commands or the interaction endpoint without redeploying the Lambda:
 
 ```bash
-./register-commands.sh --global
+AWS_PROFILE=bonfire-deploy bonfire bot update
 ```
-
-### Step 4: Build the Lambda Package
-
-```bash
-cd go
-make build
-```
-
-This cross-compiles the Go binary for Linux (`GOOS=linux GOARCH=amd64`), producing a `bootstrap` binary, and packages it as `../bonfire_discord_bot.zip` ready for deployment.
-
-The Lambda uses the `provided.al2023` runtime with `bootstrap` as the handler.
-
-### Step 5: Deploy with Terraform
-
-```bash
-cd terraform/bot
-terraform apply
-```
-
-Note the `discord_bot_endpoint` output URL.
-
-### Step 6: Configure Discord Interactions Endpoint
-
-This is the critical step that connects Discord to your Lambda:
-
-1. Go back to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Select your application
-3. Go to "General Information"
-4. Paste the `discord_bot_endpoint` URL into **Interactions Endpoint URL**
-5. Click "Save Changes"
-
-Discord will verify the endpoint by sending a PING request. If it fails, check that your Lambda deployed correctly.
 
 ## Testing
 
@@ -117,6 +74,7 @@ Try the commands in your Discord server:
 /satisfactory status
 /satisfactory start
 /satisfactory stop
+/satisfactory hello
 ```
 
 ## Troubleshooting
@@ -125,7 +83,7 @@ Try the commands in your Discord server:
 
 - **Guild commands** appear instantly but only in the specified server
 - **Global commands** take up to an hour to propagate
-- Ensure you ran `./register-commands.sh` with correct credentials
+- Run `bonfire bot update` to re-register commands
 
 ### "Interaction Failed" Error
 
@@ -135,14 +93,14 @@ Try the commands in your Discord server:
 
 ### "Invalid Signature" or Verification Failures
 
-- Ensure `DISCORD_PUBLIC_KEY` matches in both `.env` and `terraform.tfvars`
+- Ensure `DISCORD_PUBLIC_KEY` matches in both `terraform.tfvars` and Discord Developer Portal "General Information"
 - The public key must be the one from "General Information", not the bot token
 
 ### Permission Denied on Start/Stop
 
 - Add your Discord user ID to `discord_authorized_users` in terraform.tfvars
 - To find your user ID: Enable Developer Mode in Discord, right-click your name, "Copy User ID"
-- Re-run `terraform apply` after updating
+- Re-run `bonfire bot deploy` after updating
 - Note: if `discord_authorized_users` is empty, all users are denied
 
 ## Development
@@ -153,15 +111,6 @@ Try the commands in your Discord server:
 - `go/main_test.go` - Unit tests
 - `go/Makefile` - Build targets
 - `go/go.mod` / `go/go.sum` - Go module dependencies
-- `register-commands.sh` - Shell script to register slash commands (requires curl)
-- `.env` - Local environment variables (not committed)
-- `.env.example` - Template for environment variables
-
-### Available Scripts
-
-- `./register-commands.sh` - Register commands to a specific guild
-- `./register-commands.sh --global` - Register global commands (all servers)
-- `make build` (in `go/`) - Build and package the Lambda deployment zip
 
 ### Runtime Details
 
@@ -171,13 +120,10 @@ Try the commands in your Discord server:
 
 ### Environment Variables (Lambda)
 
-| Variable            | Required | Description                                      |
-|---------------------|----------|--------------------------------------------------|
-| `GAME_NAME`         | Yes      | The slash command name (e.g., `satisfactory`)    |
-| `DISCORD_PUBLIC_KEY`| Yes      | Ed25519 public key from Discord Developer Portal |
-| `INSTANCE_ID`       | Yes      | EC2 instance ID to control                       |
-| `AUTHORIZED_USERS`  | No       | Comma-separated Discord user IDs for start/stop  |
-| `AWS_REGION`        | No       | AWS region (defaults to `eu-north-1`)            |
+| Variable              | Required | Description                                      |
+|-----------------------|----------|--------------------------------------------------|
+| `DISCORD_PUBLIC_KEY`  | Yes      | Ed25519 public key from Discord Developer Portal |
+| `AWS_REGION`          | No       | Injected automatically by the Lambda runtime     |
 
 ### Running Tests
 
@@ -188,8 +134,6 @@ go test ./...
 
 ### Updating Commands
 
-1. Edit command definitions in `register-commands.sh`
-2. Run `./register-commands.sh`
-3. Update handler logic in `go/main.go` if needed
-4. Run `make build` in `go/`
-5. Run `terraform apply` to deploy
+1. Edit command definitions in `go/main.go`
+2. Run `bonfire bot update` to re-register with Discord
+3. Run `bonfire bot deploy` to rebuild and redeploy the Lambda if handler logic changed
