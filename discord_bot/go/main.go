@@ -302,7 +302,8 @@ func publicResponse(content string) InteractionResponse {
 func handleStatusCommand(ctx context.Context, client EC2API, gameName string) InteractionResponse {
 	info, err := findInstanceByGame(ctx, client, gameName)
 	if err != nil {
-		return ephemeralResponse(fmt.Sprintf("Error checking server status: %v", err))
+		log.Printf("handleStatusCommand: EC2 error for game %q: %v", gameName, err)
+		return ephemeralResponse("Unable to check server status. Please try again later.")
 	}
 	if info.State == "not_found" {
 		return ephemeralResponse(fmt.Sprintf("No server found for %s.", gameName))
@@ -326,7 +327,8 @@ func handleStartCommand(ctx context.Context, ec2Client EC2API, ssmClient SSMAPI,
 	}
 	info, err := findInstanceByGame(ctx, ec2Client, gameName)
 	if err != nil {
-		return publicResponse(fmt.Sprintf("Error starting server: %v", err))
+		log.Printf("handleStartCommand: EC2 error finding instance for game %q: %v", gameName, err)
+		return publicResponse("Unable to start server. Please try again later.")
 	}
 	if info.State == "not_found" {
 		return ephemeralResponse(fmt.Sprintf("No server found for %s.", gameName))
@@ -338,7 +340,8 @@ func handleStartCommand(ctx context.Context, ec2Client EC2API, ssmClient SSMAPI,
 		return publicResponse(fmt.Sprintf("Server is already running.\n🖥️ **IP Address**: %s", info.PublicIP))
 	}
 	if err := startInstance(ctx, ec2Client, info.InstanceID); err != nil {
-		return publicResponse(fmt.Sprintf("Error starting server: %v", err))
+		log.Printf("handleStartCommand: EC2 error starting instance %q for game %q: %v", info.InstanceID, gameName, err)
+		return publicResponse("Unable to start server. Please try again later.")
 	}
 	return publicResponse("Server is starting. It will take approximately 2-3 minutes to be available.")
 }
@@ -349,7 +352,8 @@ func handleStopCommand(ctx context.Context, ec2Client EC2API, ssmClient SSMAPI, 
 	}
 	info, err := findInstanceByGame(ctx, ec2Client, gameName)
 	if err != nil {
-		return publicResponse(fmt.Sprintf("Error stopping server: %v", err))
+		log.Printf("handleStopCommand: EC2 error finding instance for game %q: %v", gameName, err)
+		return publicResponse("Unable to stop server. Please try again later.")
 	}
 	if info.State == "not_found" {
 		return ephemeralResponse(fmt.Sprintf("No server found for %s.", gameName))
@@ -361,7 +365,8 @@ func handleStopCommand(ctx context.Context, ec2Client EC2API, ssmClient SSMAPI, 
 		return publicResponse("Server is already stopped.")
 	}
 	if err := stopInstance(ctx, ec2Client, info.InstanceID); err != nil {
-		return publicResponse(fmt.Sprintf("Error stopping server: %v", err))
+		log.Printf("handleStopCommand: EC2 error stopping instance %q for game %q: %v", info.InstanceID, gameName, err)
+		return publicResponse("Unable to stop server. Please try again later.")
 	}
 	return publicResponse("Server is stopping. Thank you for saving AWS costs!")
 }

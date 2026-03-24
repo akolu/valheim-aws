@@ -836,12 +836,81 @@ func TestHandleInteraction_StatusNotFound(t *testing.T) {
 
 func TestHandleInteraction_StatusEC2Error(t *testing.T) {
 	ssmClient := ssmWithGuild("g1")
-	mock := &mockEC2Client{describeErr: fmt.Errorf("connection refused")}
+	mock := &mockEC2Client{describeErr: fmt.Errorf("AccessDenied: User is not authorized")}
 
 	resp := handleInteraction(context.Background(), interactionWith("mc", "status", "", "g1"), mock, ssmClient)
 
 	ir := parseInteractionResponse(t, resp)
-	if ir.Data == nil || !strings.Contains(ir.Data.Content, "Error") {
-		t.Errorf("expected error message, got: %v", ir.Data)
+	if ir.Data == nil || !strings.Contains(ir.Data.Content, "Unable to check server status") {
+		t.Errorf("expected generic status error message, got: %v", ir.Data)
+	}
+	if strings.Contains(ir.Data.Content, "AccessDenied") {
+		t.Errorf("raw AWS error must not be exposed to Discord, got: %s", ir.Data.Content)
+	}
+}
+
+func TestHandleInteraction_StartEC2Error_FindInstance(t *testing.T) {
+	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
+	mock := &mockEC2Client{describeErr: fmt.Errorf("AccessDenied: User is not authorized")}
+
+	resp := handleInteraction(context.Background(), interactionWith("mc", "start", "admin", "g1"), mock, ssmClient)
+
+	ir := parseInteractionResponse(t, resp)
+	if ir.Data == nil || !strings.Contains(ir.Data.Content, "Unable to start server") {
+		t.Errorf("expected generic start error message, got: %v", ir.Data)
+	}
+	if strings.Contains(ir.Data.Content, "AccessDenied") {
+		t.Errorf("raw AWS error must not be exposed to Discord, got: %s", ir.Data.Content)
+	}
+}
+
+func TestHandleInteraction_StartEC2Error_StartInstance(t *testing.T) {
+	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
+	mock := &mockEC2Client{
+		describeOutput: stoppedInstanceWithID("i-test"),
+		startErr:       fmt.Errorf("AccessDenied: User is not authorized to call ec2:StartInstances"),
+	}
+
+	resp := handleInteraction(context.Background(), interactionWith("mc", "start", "admin", "g1"), mock, ssmClient)
+
+	ir := parseInteractionResponse(t, resp)
+	if ir.Data == nil || !strings.Contains(ir.Data.Content, "Unable to start server") {
+		t.Errorf("expected generic start error message, got: %v", ir.Data)
+	}
+	if strings.Contains(ir.Data.Content, "AccessDenied") {
+		t.Errorf("raw AWS error must not be exposed to Discord, got: %s", ir.Data.Content)
+	}
+}
+
+func TestHandleInteraction_StopEC2Error_FindInstance(t *testing.T) {
+	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
+	mock := &mockEC2Client{describeErr: fmt.Errorf("AccessDenied: User is not authorized")}
+
+	resp := handleInteraction(context.Background(), interactionWith("mc", "stop", "admin", "g1"), mock, ssmClient)
+
+	ir := parseInteractionResponse(t, resp)
+	if ir.Data == nil || !strings.Contains(ir.Data.Content, "Unable to stop server") {
+		t.Errorf("expected generic stop error message, got: %v", ir.Data)
+	}
+	if strings.Contains(ir.Data.Content, "AccessDenied") {
+		t.Errorf("raw AWS error must not be exposed to Discord, got: %s", ir.Data.Content)
+	}
+}
+
+func TestHandleInteraction_StopEC2Error_StopInstance(t *testing.T) {
+	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
+	mock := &mockEC2Client{
+		describeOutput: runningInstanceWithID("i-test", "1.2.3.4"),
+		stopErr:        fmt.Errorf("AccessDenied: User is not authorized to call ec2:StopInstances"),
+	}
+
+	resp := handleInteraction(context.Background(), interactionWith("mc", "stop", "admin", "g1"), mock, ssmClient)
+
+	ir := parseInteractionResponse(t, resp)
+	if ir.Data == nil || !strings.Contains(ir.Data.Content, "Unable to stop server") {
+		t.Errorf("expected generic stop error message, got: %v", ir.Data)
+	}
+	if strings.Contains(ir.Data.Content, "AccessDenied") {
+		t.Errorf("raw AWS error must not be exposed to Discord, got: %s", ir.Data.Content)
 	}
 }
