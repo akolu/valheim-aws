@@ -24,7 +24,6 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.AddCommand(archiveCmd)
 	rootCmd.AddCommand(provisionCmd)
 	rootCmd.AddCommand(retireCmd)
 	rootCmd.AddCommand(listCmd)
