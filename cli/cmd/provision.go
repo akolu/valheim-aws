@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -31,6 +33,11 @@ func runProvision(cmd *cobra.Command, args []string) error {
 	game := args[0]
 	if err := validateGameName(game); err != nil {
 		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	if _, err := awsConfig(ctx); err != nil {
+		return fmt.Errorf("loading AWS config: %w", err)
 	}
 	return provisionGame(game, os.Stdin)
 }
