@@ -41,6 +41,14 @@ graph TD
 - Go 1.21+ (for the CLI)
 - An S3 bucket for Terraform state
 
+> **Credential setup:** The CLI defaults to `AWS_PROFILE=bonfire-deploy`. Create a named
+> profile in `~/.aws/credentials` (or `~/.aws/config`) called `bonfire-deploy` with
+> credentials that have the required IAM permissions. To use a different profile, set
+> `AWS_PROFILE` in your environment or prefix individual commands:
+> ```bash
+> AWS_PROFILE=my-profile bonfire list
+> ```
+
 ## Supported Games
 
 | Game | Docker Image | Notes |
@@ -180,6 +188,12 @@ bonfire completion bash > /etc/bash_completion.d/bonfire
 | `AWS_PROFILE` | AWS credentials profile to use | `bonfire-deploy` |
 | `AWS_REGION` | AWS region for all operations | `eu-north-1` |
 | `AWS_DEFAULT_REGION` | Fallback region if `AWS_REGION` is unset | `eu-north-1` |
+
+`AWS_PROFILE` defaults to `bonfire-deploy` if not set. To use a different profile for a single command, prefix it:
+
+```bash
+AWS_PROFILE=my-profile bonfire list
+```
 
 ### Required IAM Permissions
 
