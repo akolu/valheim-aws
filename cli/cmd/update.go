@@ -24,9 +24,20 @@ Requires the bonfire repository to be accessible (set BONFIRE_REPO_ROOT if neede
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git is not available: install git and ensure it is on your PATH")
+	}
+
 	root, err := findRepoRoot()
 	if err != nil {
 		return err
+	}
+
+	// Verify root is a git repository
+	checkCmd := exec.Command("git", "rev-parse", "--git-dir")
+	checkCmd.Dir = root
+	if err := checkCmd.Run(); err != nil {
+		return fmt.Errorf("repo root %q is not a git repository: bonfire update requires a git clone", root)
 	}
 
 	fmt.Println("==> Pulling latest source...")
