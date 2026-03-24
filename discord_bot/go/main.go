@@ -123,7 +123,18 @@ func verifyDiscordRequest(signature, timestamp, body string) bool {
 	return ed25519.Verify(ed25519.PublicKey(pubKeyBytes), message, sigBytes)
 }
 
-// Package-level client singletons for connection reuse across warm Lambda invocations.
+// Lambda client pooling via sync.Once
+//
+// AWS Lambda reuses the same process (and its global variables) across multiple
+// invocations when the execution environment is "warm". Creating an SDK client
+// on every invocation wastes time and network connections; creating it once and
+// reusing it is idiomatic Lambda Go.
+//
+// sync.Once guarantees the initialisation function runs exactly once, even if
+// multiple goroutines call getEC2Client/getSSMClient concurrently on the first
+// warm-up. The client and any initialisation error are stored in the paired
+// package-level variables (sharedEC2Client/ec2ClientErr) so subsequent calls
+// return immediately without re-initialising.
 var (
 	ec2ClientOnce   sync.Once
 	ssmClientOnce   sync.Once
@@ -157,6 +168,8 @@ func newSSMClient(ctx context.Context) (*ssm.Client, error) {
 	return ssm.NewFromConfig(cfg), nil
 }
 
+// getEC2Client returns the shared EC2 client, initialising it on the first call
+// (sync.Once ensures a single initialisation even under concurrent invocations).
 func getEC2Client(ctx context.Context) (*ec2.Client, error) {
 	ec2ClientOnce.Do(func() {
 		sharedEC2Client, ec2ClientErr = newEC2Client(ctx)
@@ -164,6 +177,8 @@ func getEC2Client(ctx context.Context) (*ec2.Client, error) {
 	return sharedEC2Client, ec2ClientErr
 }
 
+// getSSMClient returns the shared SSM client, initialising it on the first call
+// (sync.Once ensures a single initialisation even under concurrent invocations).
 func getSSMClient(ctx context.Context) (*ssm.Client, error) {
 	ssmClientOnce.Do(func() {
 		sharedSSMClient, ssmClientErr = newSSMClient(ctx)
