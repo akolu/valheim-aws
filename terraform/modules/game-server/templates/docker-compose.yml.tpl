@@ -4,8 +4,9 @@ services:
   ${game_name}-init:
     image: ${init_service.image}
     entrypoint: ["/bin/sh", "-c"]
-    command: >-
-      ${indent(6, init_service.command)}
+    command:
+      - |
+        ${indent(8, init_service.command)}
     environment:
 %{ for key, value in init_service.env_vars ~}
       - "${key}=${value}"
