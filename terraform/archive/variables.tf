@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "games" {
   description = "List of games to create long-term backup buckets for. Bucket name is derived as {game}-long-term-backups."
   type        = list(string)
-  default     = ["valheim", "satisfactory"]
+  default     = ["valheim", "satisfactory", "factorio"]
 }
 
 variable "longterm_version_retention_days" {
