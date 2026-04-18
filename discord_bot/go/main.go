@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"strings"
 	"sync"
@@ -23,10 +22,11 @@ import (
 
 // Discord interaction type constants
 const (
-	discordPing           = 1
-	discordSlashCommand   = 2
-	discordChannelMessage = 4
-	discordEphemeralFlag  = 64
+	discordPing                   = 1
+	discordSlashCommand           = 2
+	discordChannelMessage         = 4
+	discordDeferredChannelMessage = 5
+	discordEphemeralFlag          = 64
 )
 
 // EC2API is the interface for EC2 operations used by this bot.
@@ -58,6 +58,7 @@ type LambdaResponse struct {
 type Interaction struct {
 	Type    int             `json:"type"`
 	GuildID string          `json:"guild_id"`
+	Token   string          `json:"token"`
 	Data    InteractionData `json:"data"`
 	Member  *Member         `json:"member"`
 	User    *User           `json:"user"`
@@ -81,13 +82,14 @@ type User struct {
 }
 
 type InteractionResponse struct {
-	Type int                     `json:"type"`
+	Type int                      `json:"type"`
 	Data *InteractionResponseData `json:"data,omitempty"`
 }
 
 type InteractionResponseData struct {
-	Content string `json:"content"`
-	Flags   int    `json:"flags,omitempty"`
+	Content string  `json:"content,omitempty"`
+	Flags   int     `json:"flags,omitempty"`
+	Embeds  []Embed `json:"embeds,omitempty"`
 }
 
 func jsonResponse(statusCode int, body interface{}) LambdaResponse {
@@ -135,6 +137,8 @@ func verifyDiscordRequest(signature, timestamp, body string) bool {
 // warm-up. The client and any initialisation error are stored in the paired
 // package-level variables (sharedEC2Client/ec2ClientErr) so subsequent calls
 // return immediately without re-initialising.
+//
+// The same pattern is used for the S3 client in polling.go (getS3Client).
 var (
 	ec2ClientOnce   sync.Once
 	ssmClientOnce   sync.Once
@@ -300,6 +304,9 @@ func stopInstance(ctx context.Context, client EC2API, instanceID string) error {
 	return err
 }
 
+// ephemeralResponse returns a type 4 ephemeral response with plain-text content.
+// Preserved for backwards-compatibility with tests and a handful of simple paths;
+// new code should prefer ephemeralEmbedResponse from embeds.go for brand-colored bars.
 func ephemeralResponse(content string) InteractionResponse {
 	return InteractionResponse{
 		Type: discordChannelMessage,
@@ -307,6 +314,8 @@ func ephemeralResponse(content string) InteractionResponse {
 	}
 }
 
+// publicResponse returns a type 4 public response with plain-text content.
+// Preserved for tests; new branded paths use publicEmbedResponse.
 func publicResponse(content string) InteractionResponse {
 	return InteractionResponse{
 		Type: discordChannelMessage,
@@ -314,106 +323,298 @@ func publicResponse(content string) InteractionResponse {
 	}
 }
 
-func handleStatusCommand(ctx context.Context, client EC2API, gameName string) InteractionResponse {
+// awsRegion returns the region the Lambda runs in, with the default used elsewhere.
+func awsRegion() string {
+	if r := os.Getenv("AWS_REGION"); r != "" {
+		return r
+	}
+	return "eu-north-1"
+}
+
+// discordAppID returns the Discord application ID from the environment.
+// Used by the polling loop's PATCH URL; empty in tests.
+func discordAppID() string {
+	return os.Getenv("DISCORD_APP_ID")
+}
+
+// --- handler paths ---
+
+func handleStatusCommand(ctx context.Context, client EC2API, s3Client S3API, gameName string) InteractionResponse {
 	info, err := findInstanceByGame(ctx, client, gameName)
 	if err != nil {
 		log.Printf("handleStatusCommand: EC2 error for game %q: %v", gameName, err)
-		return ephemeralResponse("Unable to check server status. Please try again later.")
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertSomethingSideways,
+			"i couldn't check on the fire just now.",
+			fmt.Sprintf(copyHintEC2ErrorFmt, "describe_instances"),
+		))
 	}
 	if info.State == "not_found" {
-		return ephemeralResponse(fmt.Sprintf("No server found for %s.", gameName))
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertNoSuchFire,
+			"no fire here by that name.",
+			fmt.Sprintf(copyHintTryStatusFmt, gameName),
+		))
 	}
 	if info.State == "multiple" {
-		return ephemeralResponse(fmt.Sprintf("Multiple instances found for %s — ambiguous.", gameName))
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertTwoFires,
+			"i found more than one — that shouldn't happen.",
+			copyHintTagCollision,
+		))
 	}
-	msg := fmt.Sprintf("Server is currently **%s**\n", info.State)
-	if info.State == "running" && info.LaunchTime != nil {
-		uptime := int(math.Round(time.Since(*info.LaunchTime).Minutes()))
-		msg += fmt.Sprintf("🖥️ **IP Address**: %s\n", info.PublicIP)
-		msg += fmt.Sprintf("⚙️ **Instance Type**: %s\n", info.InstanceType)
-		msg += fmt.Sprintf("⏱️ **Uptime**: %d minutes", uptime)
+
+	switch info.State {
+	case "running":
+		uptime := formatElapsed(elapsedSince(info.LaunchTime))
+		backup := ""
+		if s3Client != nil {
+			backup = backupElapsedString(ctx, s3Client, gameName, awsRegion())
+		}
+		var body string
+		if backup == "" {
+			body = fmt.Sprintf(copyStatusRunningNoBackup, gameName, info.PublicIP, uptime)
+		} else {
+			body = fmt.Sprintf(copyStatusRunning, gameName, info.PublicIP, uptime, backup)
+		}
+		return ephemeralEmbedResponse(lineEmbed("running", body))
+	case "pending":
+		elapsed := formatElapsed(elapsedSince(info.LaunchTime))
+		return ephemeralEmbedResponse(lineEmbed("pending", fmt.Sprintf(copyStatusPending, gameName, elapsed)))
+	case "stopping":
+		return ephemeralEmbedResponse(lineEmbed("stopping", fmt.Sprintf(copyStatusStopping, gameName)))
+	case "stopped":
+		backupStr := ""
+		if s3Client != nil {
+			backupStr = backupElapsedString(ctx, s3Client, gameName, awsRegion())
+		}
+		if backupStr == "" {
+			return ephemeralEmbedResponse(lineEmbed("stopped", fmt.Sprintf(copyStatusStoppedNever, gameName)))
+		}
+		return ephemeralEmbedResponse(lineEmbed("stopped", fmt.Sprintf(copyStatusStopped, gameName, backupStr)))
 	}
-	return ephemeralResponse(msg)
+	// Unknown state — treat as stopped-ish.
+	return ephemeralEmbedResponse(lineEmbed("", fmt.Sprintf("%s · unknown state", gameName)))
 }
 
-func handleStartCommand(ctx context.Context, ec2Client EC2API, ssmClient SSMAPI, userID, gameName string) InteractionResponse {
+// handleStartCommand — synchronous state check + idempotency; returns a
+// deferred response when the state is "stopped" so the poller can take over.
+// If a poller should run, it is returned via pollRunner (non-nil) and the caller
+// must invoke it after the HTTP response is written.
+func handleStartCommand(
+	ctx context.Context,
+	ec2Client EC2API,
+	ssmClient SSMAPI,
+	s3Client S3API,
+	userID, gameName, interactionToken string,
+) (InteractionResponse, pollRunner) {
 	if !isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
-		return publicResponse("Sorry, you don't have permission to start the server.")
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertUnauthorizedHeadline,
+			copyAlertUnauthorizedBody,
+			copyHintRoleMissing,
+		)), nil
 	}
+
 	info, err := findInstanceByGame(ctx, ec2Client, gameName)
 	if err != nil {
 		log.Printf("handleStartCommand: EC2 error finding instance for game %q: %v", gameName, err)
-		return publicResponse("Unable to start server. Please try again later.")
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertSomethingSideways,
+			"i couldn't light the fire just now.",
+			fmt.Sprintf(copyHintEC2ErrorFmt, "describe_instances"),
+		)), nil
 	}
 	if info.State == "not_found" {
-		return ephemeralResponse(fmt.Sprintf("No server found for %s.", gameName))
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertNoSuchFire,
+			"no fire here by that name.",
+			fmt.Sprintf(copyHintTryStatusFmt, gameName),
+		)), nil
 	}
 	if info.State == "multiple" {
-		return ephemeralResponse(fmt.Sprintf("Multiple instances found for %s — ambiguous.", gameName))
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertTwoFires,
+			"i found more than one — that shouldn't happen.",
+			copyHintTagCollision,
+		)), nil
 	}
-	if info.State == "running" {
-		return publicResponse(fmt.Sprintf("Server is already running.\n🖥️ **IP Address**: %s", info.PublicIP))
+
+	// Idempotency: state ∈ {running, pending, stopping} → ephemeral Line, no start, no defer.
+	switch info.State {
+	case "running":
+		elapsed := formatElapsed(elapsedSince(info.LaunchTime))
+		return ephemeralEmbedResponse(lineEmbed("running", fmt.Sprintf(copyStartAlreadyRunning, elapsed, info.PublicIP))), nil
+	case "pending":
+		elapsed := formatElapsed(elapsedSince(info.LaunchTime))
+		return ephemeralEmbedResponse(lineEmbed("pending", fmt.Sprintf(copyStartAlreadyLighting, elapsed))), nil
+	case "stopping":
+		return ephemeralEmbedResponse(lineEmbed("stopping", copyStartWhileStopping)), nil
 	}
+
+	// state == "stopped": call StartInstances, defer, spawn poller.
 	if err := startInstance(ctx, ec2Client, info.InstanceID); err != nil {
 		log.Printf("handleStartCommand: EC2 error starting instance %q for game %q: %v", info.InstanceID, gameName, err)
-		return publicResponse("Unable to start server. Please try again later.")
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertSomethingSideways,
+			"i couldn't light the fire just now.",
+			fmt.Sprintf(copyHintEC2ErrorFmt, "start_instances"),
+		)), nil
 	}
-	return publicResponse("Server is starting. It will take approximately 2-3 minutes to be available.")
+
+	cfg := pollConfig{
+		Game:       gameName,
+		Action:     "start",
+		UserID:     userID,
+		InstanceID: info.InstanceID,
+		AppID:      discordAppID(),
+		Token:      interactionToken,
+		Region:     awsRegion(),
+		EC2Client:  ec2Client,
+		S3Client:   s3Client,
+	}
+	runner := func(pollCtx context.Context) {
+		pollStartFlow(pollCtx, cfg, time.Now())
+	}
+	return deferredResponse(), runner
 }
 
-func handleStopCommand(ctx context.Context, ec2Client EC2API, ssmClient SSMAPI, userID, gameName string) InteractionResponse {
+// handleStopCommand mirrors handleStartCommand for /stop.
+func handleStopCommand(
+	ctx context.Context,
+	ec2Client EC2API,
+	ssmClient SSMAPI,
+	s3Client S3API,
+	userID, gameName, interactionToken string,
+) (InteractionResponse, pollRunner) {
 	if !isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
-		return publicResponse("Sorry, you don't have permission to stop the server.")
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertUnauthorizedHeadline,
+			copyAlertUnauthorizedBody,
+			copyHintRoleMissing,
+		)), nil
 	}
+
 	info, err := findInstanceByGame(ctx, ec2Client, gameName)
 	if err != nil {
 		log.Printf("handleStopCommand: EC2 error finding instance for game %q: %v", gameName, err)
-		return publicResponse("Unable to stop server. Please try again later.")
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertSomethingSideways,
+			"i couldn't bank the coals just now.",
+			fmt.Sprintf(copyHintEC2ErrorFmt, "describe_instances"),
+		)), nil
 	}
 	if info.State == "not_found" {
-		return ephemeralResponse(fmt.Sprintf("No server found for %s.", gameName))
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertNoSuchFire,
+			"no fire here by that name.",
+			fmt.Sprintf(copyHintTryStatusFmt, gameName),
+		)), nil
 	}
 	if info.State == "multiple" {
-		return ephemeralResponse(fmt.Sprintf("Multiple instances found for %s — ambiguous.", gameName))
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertTwoFires,
+			"i found more than one — that shouldn't happen.",
+			copyHintTagCollision,
+		)), nil
 	}
-	if info.State == "stopped" || info.State == "stopping" {
-		return publicResponse("Server is already stopped.")
+
+	// Idempotency.
+	switch info.State {
+	case "stopped":
+		backup := ""
+		if s3Client != nil {
+			backup = backupElapsedString(ctx, s3Client, gameName, awsRegion())
+		}
+		if backup == "" {
+			return ephemeralEmbedResponse(lineEmbed("stopped", copyStopAlreadyOutNever)), nil
+		}
+		return ephemeralEmbedResponse(lineEmbed("stopped", fmt.Sprintf(copyStopAlreadyOut, backup))), nil
+	case "stopping":
+		return ephemeralEmbedResponse(lineEmbed("stopping", copyStopAlreadyDyingDown)), nil
+	case "pending":
+		return ephemeralEmbedResponse(lineEmbed("pending", copyStopWhilePending)), nil
 	}
+
+	// state == "running": call StopInstances, defer, spawn poller.
 	if err := stopInstance(ctx, ec2Client, info.InstanceID); err != nil {
 		log.Printf("handleStopCommand: EC2 error stopping instance %q for game %q: %v", info.InstanceID, gameName, err)
-		return publicResponse("Unable to stop server. Please try again later.")
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertSomethingSideways,
+			"i couldn't bank the coals just now.",
+			fmt.Sprintf(copyHintEC2ErrorFmt, "stop_instances"),
+		)), nil
 	}
-	return publicResponse("Server is stopping. Thank you for saving AWS costs!")
+
+	cfg := pollConfig{
+		Game:       gameName,
+		Action:     "stop",
+		UserID:     userID,
+		InstanceID: info.InstanceID,
+		AppID:      discordAppID(),
+		Token:      interactionToken,
+		Region:     awsRegion(),
+		EC2Client:  ec2Client,
+		S3Client:   s3Client,
+	}
+	runner := func(pollCtx context.Context) {
+		pollStopFlow(pollCtx, cfg, time.Now())
+	}
+	return deferredResponse(), runner
 }
+
+// pollRunner is the closure spawned after the Discord 3s-ack response is sent.
+// The Lambda handler blocks on the runner (via WaitGroup) so the process stays
+// alive until the poll loop is finished and the terminal PATCH is issued.
+type pollRunner func(ctx context.Context)
 
 func handleHelpCommand(gameName string) InteractionResponse {
 	if gameName == "" {
-		return ephemeralResponse("Unknown command")
+		return ephemeralEmbedResponse(alertEmbed(
+			"unknown command",
+			"ask a keeper for the right command.",
+			"try · /<game> help",
+		))
 	}
-	displayName := strings.ToUpper(gameName[:1]) + gameName[1:]
-	helpText := fmt.Sprintf("**%s Server Commands:**\n`/%s status` - Check server status\n`/%s start` - Start the server\n`/%s stop` - Stop the server\n`/%s help` - Show this help message",
-		displayName, gameName, gameName, gameName, gameName)
-	return ephemeralResponse(helpText)
+	lines := []string{
+		fmt.Sprintf(copyHelpHeader, gameName),
+		fmt.Sprintf(copyHelpStatus, gameName),
+		fmt.Sprintf(copyHelpStart, gameName),
+		fmt.Sprintf(copyHelpStop, gameName),
+		fmt.Sprintf(copyHelpHello, gameName),
+		fmt.Sprintf(copyHelpHelp, gameName),
+	}
+	return ephemeralEmbedResponse(lineEmbed("", strings.Join(lines, "\n")))
 }
 
 func handleHelloCommand(ctx context.Context, ssmClient SSMAPI, userID, gameName string) InteractionResponse {
-	authStatus := "not authorized"
+	var msg string
 	if isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
-		authStatus = "authorized"
+		msg = copyHelloKeeper
+	} else {
+		msg = copyHelloVisitor
 	}
-	msg := fmt.Sprintf("👋 Bot is reachable!\n👤 **Your user ID**: %s\n🔐 **Authorization**: %s\n🎮 **Game**: %s",
-		userID, authStatus, gameName)
-	return ephemeralResponse(msg)
+	return ephemeralEmbedResponse(lineEmbed("", msg))
 }
 
-func handleInteraction(ctx context.Context, interaction Interaction, ec2Client EC2API, ssmClient SSMAPI) LambdaResponse {
+// handleInteraction dispatches a single Discord slash command and returns both
+// the immediate InteractionResponse and an optional pollRunner that must run
+// after the HTTP response has been written back to Discord.
+//
+// Kept synchronous (no spawning) so tests can assert responses without
+// coordinating goroutines; the caller (handler) manages the WaitGroup.
+func handleInteraction(ctx context.Context, interaction Interaction, ec2Client EC2API, ssmClient SSMAPI, s3Client S3API) (LambdaResponse, pollRunner) {
 	if interaction.Type != discordSlashCommand {
-		return jsonResponse(400, map[string]string{"error": "Not a slash command"})
+		return jsonResponse(400, map[string]string{"error": "Not a slash command"}), nil
 	}
 
 	// Guild allowlist check — reject requests from non-allowlisted guilds (fail closed)
 	if !checkGuildAllowlist(ctx, interaction.GuildID, ssmClient) {
-		return jsonResponse(200, ephemeralResponse("This bot is not available in this server."))
+		return jsonResponse(200, ephemeralEmbedResponse(alertEmbed(
+			copyAlertGuildBlocked,
+			"this guild isn't on the allowlist.",
+			"err · guild_not_allowed",
+		))), nil
 	}
 
 	userID := ""
@@ -426,28 +627,39 @@ func handleInteraction(ctx context.Context, interaction Interaction, ec2Client E
 	gameName := interaction.Data.Name
 
 	if len(interaction.Data.Options) == 0 {
-		return jsonResponse(200, ephemeralResponse("Unknown action"))
+		return jsonResponse(200, ephemeralEmbedResponse(alertEmbed(
+			"unknown action",
+			"try one of: status, start, stop, help, hello.",
+			fmt.Sprintf(copyHintTryStatusFmt, gameName),
+		))), nil
 	}
 
 	action := interaction.Data.Options[0].Name
 
-	var interactionResp InteractionResponse
+	var (
+		interactionResp InteractionResponse
+		runner          pollRunner
+	)
 	switch action {
 	case "status":
-		interactionResp = handleStatusCommand(ctx, ec2Client, gameName)
+		interactionResp = handleStatusCommand(ctx, ec2Client, s3Client, gameName)
 	case "start":
-		interactionResp = handleStartCommand(ctx, ec2Client, ssmClient, userID, gameName)
+		interactionResp, runner = handleStartCommand(ctx, ec2Client, ssmClient, s3Client, userID, gameName, interaction.Token)
 	case "stop":
-		interactionResp = handleStopCommand(ctx, ec2Client, ssmClient, userID, gameName)
+		interactionResp, runner = handleStopCommand(ctx, ec2Client, ssmClient, s3Client, userID, gameName, interaction.Token)
 	case "help":
 		interactionResp = handleHelpCommand(gameName)
 	case "hello":
 		interactionResp = handleHelloCommand(ctx, ssmClient, userID, gameName)
 	default:
-		interactionResp = ephemeralResponse("Unknown command")
+		interactionResp = ephemeralEmbedResponse(alertEmbed(
+			"unknown command",
+			"ask a keeper for the right command.",
+			fmt.Sprintf(copyHintTryStatusFmt, gameName),
+		))
 	}
 
-	return jsonResponse(200, interactionResp)
+	return jsonResponse(200, interactionResp), runner
 }
 
 func handler(ctx context.Context, req LambdaRequest) (LambdaResponse, error) {
@@ -499,7 +711,32 @@ func handler(ctx context.Context, req LambdaRequest) (LambdaResponse, error) {
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
 	}
 
-	return handleInteraction(ctx, interaction, ec2Client, ssmClient), nil
+	// S3 client — best-effort; BACKUP field is optional and we don't want a
+	// transient S3 config failure to break /start or /stop.
+	//
+	// Typed as the S3API interface (not *s3.Client) so we can pass a bare `nil`
+	// on error — passing a typed-nil *s3.Client through the interface would
+	// create a non-nil S3API with a nil concrete value, breaking the `if
+	// s3Client != nil` checks in the handlers.
+	var s3Client S3API
+	if c, err := getS3Client(ctx); err != nil {
+		log.Printf("Error creating S3 client (backup lookups will be skipped): %v", err)
+	} else {
+		s3Client = c
+	}
+
+	resp, runner := handleInteraction(ctx, interaction, ec2Client, ssmClient, s3Client)
+
+	// If the handler returned a deferred response, run the poll loop before
+	// letting the Lambda exit. The loop PATCHes the original message; once it
+	// returns we can let the Lambda process shut down.
+	if runner != nil {
+		// The poll loop uses its own derived context off `ctx` so it honours the
+		// Lambda deadline; we just wait for it to finish here.
+		runner(ctx)
+	}
+
+	return resp, nil
 }
 
 // Compile-time assertions that *ec2.Client and *ssm.Client satisfy their interfaces.

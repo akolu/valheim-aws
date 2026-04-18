@@ -44,12 +44,22 @@ For example: `/valheim start`, `/satisfactory status`, `/valheim hello`
 Create `terraform/bot/terraform.tfvars` with your Discord credentials and game server details:
 
 ```hcl
-discord_public_key    = "your_public_key_from_developer_portal"
-discord_bot_token     = "your_bot_token"
-discord_app_id        = "your_application_id"
+discord_public_key     = "your_public_key_from_developer_portal"
+discord_bot_token      = "your_bot_token"
+discord_application_id = "your_application_id"
 ```
 
-### Step 3: Deploy
+### Step 3: Avatar upload (one-time)
+
+The bot ships with a branded avatar in `discord_bot/assets/avatar/`. Upload it once:
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) → your app → **Bot** → **Icon**
+2. Drag-drop `discord_bot/assets/avatar/bonfire-lit-512.png` into the icon slot
+3. Click **Save Changes**
+
+The `lit` and `unlit` variants in 128/256/512/1024 are provided for future use (stateful avatar swaps, marketing, etc.) but Discord only uses one icon at a time.
+
+### Step 4: Deploy
 
 ```bash
 AWS_PROFILE=bonfire-deploy bonfire bot deploy
@@ -63,7 +73,7 @@ To update slash commands or the interaction endpoint without redeploying the Lam
 AWS_PROFILE=bonfire-deploy bonfire bot update
 ```
 
-### Step 4: Post-Deployment Authorization
+### Step 5: Post-Deployment Authorization
 
 After deployment, configure who can use the bot via the `bonfire bot` CLI:
 
@@ -170,10 +180,11 @@ To find your guild ID: Enable Developer Mode in Discord settings, right-click yo
 
 ### Environment Variables (Lambda)
 
-| Variable              | Required | Description                                      |
-|-----------------------|----------|--------------------------------------------------|
-| `DISCORD_PUBLIC_KEY`  | Yes      | Ed25519 public key from Discord Developer Portal |
-| `AWS_REGION`          | No       | Injected automatically by the Lambda runtime     |
+| Variable              | Required | Description                                                                                |
+|-----------------------|----------|--------------------------------------------------------------------------------------------|
+| `DISCORD_PUBLIC_KEY`  | Yes      | Ed25519 public key from Discord Developer Portal                                           |
+| `DISCORD_APP_ID`      | Yes      | Discord application ID — used to construct webhook PATCH URLs for deferred `/start` / `/stop` responses |
+| `AWS_REGION`          | No       | Injected automatically by the Lambda runtime                                               |
 
 ### Running Tests
 

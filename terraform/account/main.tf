@@ -245,6 +245,22 @@ resource "aws_iam_policy" "bot_lambda" {
         # DLQ is created in terraform/bot/; use ARN pattern to avoid cross-stack reference
         Resource = "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:bonfire_bot_dlq"
       },
+      # S3 read on game-backup buckets — the bot lists latest-backup LastModified
+      # to surface "last burned X ago" in /status and idempotent Line replies.
+      # Wildcard mirrors the CLI role's pattern: bonfire-*-backups-* covers all
+      # games across regions without per-game Terraform churn.
+      {
+        Sid    = "S3BackupListRead"
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",
+          "s3:GetObject",
+        ]
+        Resource = [
+          "arn:aws:s3:::bonfire-*-backups-*",
+          "arn:aws:s3:::bonfire-*-backups-*/*",
+        ]
+      },
     ]
   })
 }

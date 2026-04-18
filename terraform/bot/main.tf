@@ -28,8 +28,10 @@ resource "aws_lambda_function" "bot" {
   handler       = "bootstrap"
   runtime       = "provided.al2023"
   architectures = ["x86_64"]
-  timeout       = 15
-  memory_size   = 256
+  # 180s accommodates the synchronous EC2-poll → Discord-PATCH loop for /start
+  # and /stop (see docs/plans/2026-04-19-brand-bot-implementation.md § Decision #1).
+  timeout     = 180
+  memory_size = 256
 
   # Built by discord_bot/go/Makefile — outputs to discord_bot/bonfire_discord_bot.zip
   filename         = "../../discord_bot/bonfire_discord_bot.zip"
@@ -38,6 +40,9 @@ resource "aws_lambda_function" "bot" {
   environment {
     variables = {
       DISCORD_PUBLIC_KEY = var.discord_public_key
+      # Required at runtime for the webhook PATCH URL
+      # (https://discord.com/api/v10/webhooks/{app_id}/{token}/messages/@original).
+      DISCORD_APP_ID = var.discord_application_id
     }
   }
 
