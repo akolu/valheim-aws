@@ -245,6 +245,16 @@ resource "aws_iam_policy" "bot_lambda" {
         # DLQ is created in terraform/bot/; use ARN pattern to avoid cross-stack reference
         Resource = "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:bonfire_bot_dlq"
       },
+      # Self-invoke: the ack path handler dispatches an async self-invoke that
+      # takes over the polling phase (see docs/plans/2026-04-19-brand-bot-implementation.md
+      # Amendment 2 § Architecture). Scoped to the bot function's own ARN —
+      # never `*` (Architect risk #3).
+      {
+        Sid      = "LambdaSelfInvoke"
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:bonfire_bot"
+      },
       # S3 read on game-backup buckets — the bot lists latest-backup LastModified
       # to surface "last burned X ago" in /status and idempotent Line replies.
       # Wildcard mirrors the CLI role's pattern: bonfire-*-backups-* covers all

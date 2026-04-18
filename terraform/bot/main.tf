@@ -12,9 +12,12 @@ locals {
   bot_lambda_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/bonfire_bot_lambda_role"
 }
 
-# Dead letter queue for failed Lambda invocations
+# Dead letter queue for failed async Lambda invocations (self-invoke from the
+# ack path to the poll path — see docs/plans/2026-04-19-brand-bot-implementation.md
+# Amendment 2). 14-day retention gives room to inspect failures manually.
 resource "aws_sqs_queue" "bot_dlq" {
-  name = "bonfire_bot_dlq"
+  name                      = "bonfire_bot_dlq"
+  message_retention_seconds = 1209600 # 14 days
 
   tags = merge(local.tags, {
     Name = "bonfire_bot_dlq"
@@ -62,6 +65,29 @@ resource "aws_cloudwatch_log_group" "bot_lambda" {
   tags = merge(local.tags, {
     Name = "/aws/lambda/bonfire_bot"
   })
+}
+
+# Async invoke configuration — only applies to Lambda async invocations (the
+# ack path's self-invoke of the poll path). Two invariants worth calling out:
+#
+#   maximum_retry_attempts = 0  — Architect risk #1. Default is 2 retries; a
+#     transient EC2 blip during the poll would re-run the full loop and spam
+#     Discord with duplicate PATCHes. We want failures to land in the DLQ,
+#     not to be retried automatically.
+#
+#   maximum_event_age_in_seconds = 60  — don't bother dispatching polls that
+#     have been queued longer than a minute; the Discord interaction token
+#     ages out within 15 min and the user has likely abandoned the command.
+resource "aws_lambda_function_event_invoke_config" "bot" {
+  function_name                = aws_lambda_function.bot.function_name
+  maximum_retry_attempts       = 0
+  maximum_event_age_in_seconds = 60
+
+  destination_config {
+    on_failure {
+      destination = aws_sqs_queue.bot_dlq.arn
+    }
+  }
 }
 
 # API Gateway HTTP API (v2)

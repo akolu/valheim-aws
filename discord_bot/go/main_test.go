@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	lambdaapi "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -99,6 +100,49 @@ func (m *mockS3Client) ListObjectsV2(_ context.Context, _ *s3.ListObjectsV2Input
 		return nil, m.err
 	}
 	return m.output, nil
+}
+
+// mockLambdaClient implements LambdaAPI for tests of the self-invoke dispatch path.
+type mockLambdaClient struct {
+	invokeErr    error
+	invokeStatus int32 // if 0, treated as 202 (success) on no-err
+
+	mu                 sync.Mutex
+	invokeCalled       bool
+	invokeCalls        int
+	lastInvokeInput    *lambdaapi.InvokeInput
+	lastInvokePayload  []byte
+}
+
+func (m *mockLambdaClient) Invoke(_ context.Context, input *lambdaapi.InvokeInput, _ ...func(*lambdaapi.Options)) (*lambdaapi.InvokeOutput, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.invokeCalled = true
+	m.invokeCalls++
+	m.lastInvokeInput = input
+	if input != nil && input.Payload != nil {
+		m.lastInvokePayload = append([]byte(nil), input.Payload...)
+	}
+	if m.invokeErr != nil {
+		return nil, m.invokeErr
+	}
+	status := m.invokeStatus
+	if status == 0 {
+		status = 202
+	}
+	return &lambdaapi.InvokeOutput{StatusCode: status}, nil
+}
+
+// callHandler marshals a LambdaRequest to JSON and invokes the top-level
+// handler, which now takes json.RawMessage. Used by the PING / signature /
+// ack-path tests.
+func callHandler(t *testing.T, req LambdaRequest) (LambdaResponse, error) {
+	t.Helper()
+	raw, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal LambdaRequest: %v", err)
+	}
+	return handler(context.Background(), raw)
 }
 
 func s3OutputWithLastModified(at time.Time) *s3.ListObjectsV2Output {
@@ -329,7 +373,7 @@ func TestHandler_Ping(t *testing.T) {
 	body := `{"type":1}`
 	req := makeSignedRequest(t, pub, priv, body)
 
-	resp, err := handler(context.Background(), req)
+	resp, err := callHandler(t, req)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -350,7 +394,7 @@ func TestHandler_MissingSignatureHeaders(t *testing.T) {
 		Headers: map[string]string{},
 		Body:    `{"type":1}`,
 	}
-	resp, err := handler(context.Background(), req)
+	resp, err := callHandler(t, req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -367,7 +411,7 @@ func TestHandler_InvalidSignature(t *testing.T) {
 	body := `{"type":1}`
 	req := makeSignedRequest(t, pub, wrongPriv, body)
 
-	resp, err := handler(context.Background(), req)
+	resp, err := callHandler(t, req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -402,11 +446,11 @@ func parseInteractionResponse(t *testing.T, resp LambdaResponse) InteractionResp
 	return ir
 }
 
-// runHandle is a convenience wrapper that discards the pollRunner — the old tests
-// expect handleInteraction to return only the LambdaResponse.
+// runHandle is a convenience wrapper for tests that don't care about the
+// self-invoke path — injects a recording lambda mock that is verified only
+// when tests explicitly check it.
 func runHandle(ctx context.Context, interaction Interaction, ec2Client EC2API, ssmClient SSMAPI) LambdaResponse {
-	resp, _ := handleInteraction(ctx, interaction, ec2Client, ssmClient, nil)
-	return resp
+	return handleInteraction(ctx, interaction, ec2Client, ssmClient, nil, &mockLambdaClient{}, "bonfire_bot")
 }
 
 // --- Guild allowlist tests ---
@@ -483,7 +527,7 @@ func TestGuildAllowlist_PingSkipsCheck(t *testing.T) {
 	body := `{"type":1,"guild_id":"unknown-guild"}`
 	req := makeSignedRequest(t, pub, priv, body)
 
-	resp, err := handler(context.Background(), req)
+	resp, err := callHandler(t, req)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -576,13 +620,14 @@ func TestSSMAuth_Present_Authorized(t *testing.T) {
 	mock := &mockEC2Client{describeOutput: stoppedInstanceWithID("i-test")}
 
 	interaction := interactionWith("valheim", "start", "admin", "g1")
-	resp, runner := handleInteraction(context.Background(), interaction, mock, ssmClient, nil)
-	// Authorized + stopped → StartInstances is called and the handler returns a deferred response.
+	lambdaMock := &mockLambdaClient{}
+	resp := handleInteraction(context.Background(), interaction, mock, ssmClient, nil, lambdaMock, "bonfire_bot")
+	// Authorized + stopped → StartInstances is called, self-invoke dispatched, deferred response returned.
 	if !mock.startCalled {
 		t.Error("StartInstances should be called for authorized user")
 	}
-	if runner == nil {
-		t.Error("expected pollRunner for authorized /start of stopped server")
+	if !lambdaMock.invokeCalled {
+		t.Error("expected self-invoke dispatch for authorized /start of stopped server")
 	}
 	ir := parseInteractionResponse(t, resp)
 	if ir.Type != discordDeferredChannelMessage {
@@ -670,7 +715,7 @@ func TestHandleInteraction_StatusStoppedNeverBurned(t *testing.T) {
 	mock := &mockEC2Client{describeOutput: stoppedInstanceWithID("i-test")}
 	s3Mock := &mockS3Client{output: &s3.ListObjectsV2Output{}} // empty bucket
 
-	resp, _ := handleInteraction(context.Background(), interactionWith("mc", "status", "", "g1"), mock, ssmClient, s3Mock)
+	resp := handleInteraction(context.Background(), interactionWith("mc", "status", "", "g1"), mock, ssmClient, s3Mock, &mockLambdaClient{}, "bonfire_bot")
 	ir := parseInteractionResponse(t, resp)
 	embed := firstEmbed(t, ir)
 	if !strings.Contains(embedBody(embed), "never burned") {
@@ -757,8 +802,9 @@ func TestHandleInteraction_StartWhileStopping(t *testing.T) {
 func TestHandleInteraction_StartAuthorized_Stopped_DefersAndStarts(t *testing.T) {
 	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
 	mock := &mockEC2Client{describeOutput: stoppedInstanceWithID("i-test")}
+	lambdaMock := &mockLambdaClient{}
 
-	resp, runner := handleInteraction(context.Background(), interactionWith("mc", "start", "admin", "g1"), mock, ssmClient, nil)
+	resp := handleInteraction(context.Background(), interactionWith("mc", "start", "admin", "g1"), mock, ssmClient, nil, lambdaMock, "bonfire_bot")
 
 	if resp.StatusCode != 200 {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
@@ -766,8 +812,8 @@ func TestHandleInteraction_StartAuthorized_Stopped_DefersAndStarts(t *testing.T)
 	if !mock.startCalled {
 		t.Error("StartInstances should be called for authorized user starting stopped server")
 	}
-	if runner == nil {
-		t.Fatal("expected pollRunner to be returned for stopped→start transition")
+	if !lambdaMock.invokeCalled {
+		t.Fatal("expected self-invoke dispatch for stopped→start transition")
 	}
 	ir := parseInteractionResponse(t, resp)
 	if ir.Type != discordDeferredChannelMessage {
@@ -794,14 +840,15 @@ func TestHandleInteraction_StopUnauthorized(t *testing.T) {
 func TestHandleInteraction_StopAuthorized_DefersAndStops(t *testing.T) {
 	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
 	mock := &mockEC2Client{describeOutput: runningInstanceWithID("i-test", "1.2.3.4")}
+	lambdaMock := &mockLambdaClient{}
 
-	resp, runner := handleInteraction(context.Background(), interactionWith("mc", "stop", "admin", "g1"), mock, ssmClient, nil)
+	resp := handleInteraction(context.Background(), interactionWith("mc", "stop", "admin", "g1"), mock, ssmClient, nil, lambdaMock, "bonfire_bot")
 
 	if !mock.stopCalled {
 		t.Error("StopInstances should be called for authorized user stopping running server")
 	}
-	if runner == nil {
-		t.Fatal("expected pollRunner for /stop of running server")
+	if !lambdaMock.invokeCalled {
+		t.Fatal("expected self-invoke dispatch for /stop of running server")
 	}
 	ir := parseInteractionResponse(t, resp)
 	if ir.Type != discordDeferredChannelMessage {
@@ -974,7 +1021,7 @@ func TestHandleInteraction_NonSlashCommand(t *testing.T) {
 	mock := &mockEC2Client{}
 	ssmClient := &mockSSMClient{params: map[string]string{}}
 	interaction := Interaction{Type: 3}
-	resp, _ := handleInteraction(context.Background(), interaction, mock, ssmClient, nil)
+	resp := handleInteraction(context.Background(), interaction, mock, ssmClient, nil, &mockLambdaClient{}, "bonfire_bot")
 
 	if resp.StatusCode != 400 {
 		t.Errorf("expected 400 for non-slash command, got %d", resp.StatusCode)
@@ -995,12 +1042,13 @@ func TestHandleInteraction_MemberUserFallback(t *testing.T) {
 		Member: &Member{User: &User{ID: "admin"}},
 	}
 
-	resp, runner := handleInteraction(context.Background(), interaction, mock, ssmClient, nil)
+	lambdaMock := &mockLambdaClient{}
+	resp := handleInteraction(context.Background(), interaction, mock, ssmClient, nil, lambdaMock, "bonfire_bot")
 	if !mock.stopCalled {
 		t.Error("StopInstances should be called when authorized user via Member.User")
 	}
-	if runner == nil {
-		t.Error("expected pollRunner for /stop of running server")
+	if !lambdaMock.invokeCalled {
+		t.Error("expected self-invoke dispatch for /stop of running server")
 	}
 	_ = resp
 }
@@ -1395,5 +1443,137 @@ func TestWebhookPATCHEndpoint_Shape(t *testing.T) {
 	want := "https://discord.com/api/v10/webhooks/123/tok/messages/@original"
 	if got != want {
 		t.Errorf("webhookPATCHEndpoint = %q, want %q", got, want)
+	}
+}
+
+// --- Amendment 2: async self-invoke handler routing ---
+
+func TestHandler_SelfPollEventShape_DispatchesToPollLoop(t *testing.T) {
+	// A self-poll event with an unknown action should be routed to handleSelfPoll,
+	// which returns 400 for the unknown action. This proves the router took the
+	// self-poll branch (the ack path would fail earlier on signature-verification
+	// against a malformed event).
+	raw := json.RawMessage(`{"source":"self-poll","action":"bogus"}`)
+	resp, err := handler(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if resp.StatusCode != 400 {
+		t.Errorf("expected 400 for unknown self-poll action, got %d — body: %s", resp.StatusCode, resp.Body)
+	}
+	if !strings.Contains(resp.Body, "unknown action") {
+		t.Errorf("expected 'unknown action' in self-poll dispatch body, got: %s", resp.Body)
+	}
+}
+
+func TestHandler_InteractionEventShape_DispatchesToAck(t *testing.T) {
+	// A plain API Gateway-style LambdaRequest (no "source" field) should be routed
+	// to the ack path — which without signature headers returns 401.
+	req := LambdaRequest{
+		Headers: map[string]string{}, // missing signature → ack path rejects with 401
+		Body:    `{"type":1}`,
+	}
+	resp, err := callHandler(t, req)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if resp.StatusCode != 401 {
+		t.Errorf("expected 401 (ack path, missing signature), got %d — body: %s", resp.StatusCode, resp.Body)
+	}
+	// The ack path's 401 body includes "Missing signature headers"; the self-poll
+	// path never produces that string. Dispatch to ack is confirmed.
+	if !strings.Contains(resp.Body, "signature") {
+		t.Errorf("expected ack-path signature error in body, got: %s", resp.Body)
+	}
+}
+
+func TestHandler_SelfPollBranch_DoesNotSelfInvoke(t *testing.T) {
+	// Structural guarantee: the self-poll branch doesn't receive a LambdaAPI
+	// client, so it structurally cannot call Invoke. This test calls
+	// handleSelfPoll directly with a malformed event and asserts the branch
+	// returns a response without reaching any Lambda SDK code path.
+	raw := json.RawMessage(`{"source":"self-poll","action":"bogus","game":"mc"}`)
+	resp, err := handleSelfPoll(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("handleSelfPoll returned error: %v", err)
+	}
+	// 400 for unknown action — reached the terminal return without touching a lambda client.
+	if resp.StatusCode != 400 {
+		t.Errorf("expected 400, got %d — body: %s", resp.StatusCode, resp.Body)
+	}
+}
+
+func TestHandler_TransitionPath_AcksAfterSelfInvoke(t *testing.T) {
+	// Transition path: /start on a stopped instance dispatches exactly one
+	// self-invoke with a well-shaped payload and returns Discord type-5 ACK.
+	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
+	mock := &mockEC2Client{describeOutput: stoppedInstanceWithID("i-test")}
+	lambdaMock := &mockLambdaClient{}
+
+	resp := handleInteraction(context.Background(), interactionWith("mc", "start", "admin", "g1"), mock, ssmClient, nil, lambdaMock, "bonfire_bot")
+
+	if lambdaMock.invokeCalls != 1 {
+		t.Fatalf("expected exactly 1 Invoke call, got %d", lambdaMock.invokeCalls)
+	}
+	if lambdaMock.lastInvokeInput == nil {
+		t.Fatal("expected Invoke input to be recorded")
+	}
+	if aws.ToString(lambdaMock.lastInvokeInput.FunctionName) != "bonfire_bot" {
+		t.Errorf("expected FunctionName bonfire_bot, got %q", aws.ToString(lambdaMock.lastInvokeInput.FunctionName))
+	}
+	if string(lambdaMock.lastInvokeInput.InvocationType) != "Event" {
+		t.Errorf("expected InvocationType Event, got %q", lambdaMock.lastInvokeInput.InvocationType)
+	}
+	// Payload shape check
+	var payload selfPollEvent
+	if err := json.Unmarshal(lambdaMock.lastInvokePayload, &payload); err != nil {
+		t.Fatalf("unmarshal self-poll payload: %v", err)
+	}
+	if payload.Source != selfPollSource {
+		t.Errorf("expected source %q, got %q", selfPollSource, payload.Source)
+	}
+	if payload.Game != "mc" || payload.Action != "start" || payload.User.ID != "admin" {
+		t.Errorf("self-poll payload mismatched: %+v", payload)
+	}
+	if payload.InstanceID != "i-test" {
+		t.Errorf("expected instance id i-test, got %q", payload.InstanceID)
+	}
+	if payload.EnqueuedAt == "" {
+		t.Error("expected EnqueuedAt to be set")
+	}
+	// Response shape
+	ir := parseInteractionResponse(t, resp)
+	if ir.Type != discordDeferredChannelMessage {
+		t.Errorf("expected type 5 deferred response, got %d", ir.Type)
+	}
+}
+
+func TestHandler_SelfInvokeFailure_ReturnsAlert(t *testing.T) {
+	// If the Lambda self-invoke errors (throttle, permission denied, etc.),
+	// the ack path returns a type-4 ephemeral Alert with a lambda_invoke hint.
+	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
+	mock := &mockEC2Client{describeOutput: stoppedInstanceWithID("i-test")}
+	lambdaMock := &mockLambdaClient{invokeErr: fmt.Errorf("AccessDenied: user not authorized to invoke function")}
+
+	resp := handleInteraction(context.Background(), interactionWith("mc", "start", "admin", "g1"), mock, ssmClient, nil, lambdaMock, "bonfire_bot")
+
+	ir := parseInteractionResponse(t, resp)
+	if ir.Type != discordChannelMessage {
+		t.Errorf("expected type 4 channel message on self-invoke failure, got %d", ir.Type)
+	}
+	if ir.Data == nil || ir.Data.Flags != discordEphemeralFlag {
+		t.Errorf("expected ephemeral flag 64 on Alert, got flags: %v", ir.Data)
+	}
+	embed := firstEmbed(t, ir)
+	if !strings.Contains(embedBody(embed), copyAlertSomethingSideways) {
+		t.Errorf("expected 'something went sideways' headline, got: %s", embedBody(embed))
+	}
+	// Hint footer should name the lambda_invoke failure kind.
+	hint := ""
+	if embed.Footer != nil {
+		hint = embed.Footer.Text
+	}
+	if !strings.Contains(hint, "lambda_invoke") {
+		t.Errorf("expected hint containing 'lambda_invoke', got: %q", hint)
 	}
 }

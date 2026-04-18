@@ -253,9 +253,9 @@ func runPollLoop(
 	}
 	initialEmbed := buildInFlight(cfg, 0, initialState)
 	if res := patchOriginalMessage(pollCtx, cfg.HTTPClient, cfg.AppID, cfg.Token, WebhookEditBody{Embeds: []Embed{initialEmbed}}); res.Err != nil {
-		log.Printf("runPollLoop: initial PATCH error: %v", res.Err)
+		log.Printf("[poll] runPollLoop: initial PATCH error: %v", res.Err)
 	} else if res.StatusCode == http.StatusNotFound {
-		log.Printf("runPollLoop: initial PATCH returned 404 — original message gone; exiting")
+		log.Printf("[poll] runPollLoop: initial PATCH returned 404 — original message gone; exiting")
 		return
 	}
 
@@ -277,14 +277,14 @@ func runPollLoop(
 	for {
 		select {
 		case <-pollCtx.Done():
-			log.Printf("runPollLoop: context deadline reached for %s %s", cfg.Action, cfg.Game)
+			log.Printf("[poll] runPollLoop: context deadline reached for %s %s", cfg.Action, cfg.Game)
 			deadlineHit = true
 			// fall through to terminal PATCH using a fresh short-lived ctx
 		case <-ticker.C:
 			info, err := findInstanceByGame(pollCtx, cfg.EC2Client, cfg.Game)
 			if err != nil {
 				// Log and skip; next tick retries naturally.
-				log.Printf("runPollLoop: DescribeInstances error for %s: %v", cfg.Game, err)
+				log.Printf("[poll] runPollLoop: DescribeInstances error for %s: %v", cfg.Game, err)
 				continue
 			}
 			lastSeenInfo = info
@@ -297,7 +297,7 @@ func runPollLoop(
 				embed := buildTerminal(finalCtx, cfg, info, false)
 				patchWithRetry(finalCtx, cfg.HTTPClient, cfg.AppID, cfg.Token, WebhookEditBody{Embeds: []Embed{embed}})
 				finalCancel()
-				log.Printf("runPollLoop: %s %s reached terminal state %q", cfg.Action, cfg.Game, info.State)
+				log.Printf("[poll] runPollLoop: %s %s reached terminal state %q", cfg.Action, cfg.Game, info.State)
 				return
 			}
 
@@ -309,12 +309,12 @@ func runPollLoop(
 				embed := buildInFlight(cfg, elapsed, info.State)
 				res := patchOriginalMessage(pollCtx, cfg.HTTPClient, cfg.AppID, cfg.Token, WebhookEditBody{Embeds: []Embed{embed}})
 				if res.StatusCode == http.StatusNotFound {
-					log.Printf("runPollLoop: mid-poll PATCH returned 404 — original message gone; exiting")
+					log.Printf("[poll] runPollLoop: mid-poll PATCH returned 404 — original message gone; exiting")
 					return
 				}
 				// 429: sleep for Retry-After and loop; next tick naturally retries.
 				if res.StatusCode == http.StatusTooManyRequests && res.RetryAfter > 0 {
-					log.Printf("runPollLoop: 429 from discord; sleeping %s", res.RetryAfter)
+					log.Printf("[poll] runPollLoop: 429 from discord; sleeping %s", res.RetryAfter)
 					timer := time.NewTimer(res.RetryAfter)
 					select {
 					case <-timer.C:
@@ -323,7 +323,7 @@ func runPollLoop(
 					}
 				}
 				if res.Err != nil {
-					log.Printf("runPollLoop: mid-poll PATCH error: %v", res.Err)
+					log.Printf("[poll] runPollLoop: mid-poll PATCH error: %v", res.Err)
 				}
 				lastObservedState = info.State
 				lastPatchAt = time.Now()
@@ -350,7 +350,7 @@ func patchWithRetry(ctx context.Context, client httpDoer, appID, token string, b
 	}
 	// 404 → message gone; nothing to retry.
 	if res.StatusCode == http.StatusNotFound {
-		log.Printf("patchWithRetry: terminal PATCH returned 404; giving up")
+		log.Printf("[poll] patchWithRetry: terminal PATCH returned 404; giving up")
 		return
 	}
 	// Back off briefly, then retry once.
@@ -363,14 +363,14 @@ func patchWithRetry(ctx context.Context, client httpDoer, appID, token string, b
 	case <-timer.C:
 	case <-ctx.Done():
 		timer.Stop()
-		log.Printf("patchWithRetry: ctx cancelled before retry")
+		log.Printf("[poll] patchWithRetry: ctx cancelled before retry")
 		return
 	}
 	res2 := patchOriginalMessage(ctx, client, appID, token, body)
 	if res2.Err != nil {
-		log.Printf("patchWithRetry: terminal PATCH retry failed: %v", res2.Err)
+		log.Printf("[poll] patchWithRetry: terminal PATCH retry failed: %v", res2.Err)
 	} else if res2.StatusCode >= 400 {
-		log.Printf("patchWithRetry: terminal PATCH retry got status %d", res2.StatusCode)
+		log.Printf("[poll] patchWithRetry: terminal PATCH retry got status %d", res2.StatusCode)
 	}
 }
 

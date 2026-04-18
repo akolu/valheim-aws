@@ -17,6 +17,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	lambdaapi "github.com/aws/aws-sdk-go-v2/service/lambda"
+	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
@@ -41,6 +43,36 @@ type EC2API interface {
 type SSMAPI interface {
 	GetParameter(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error)
 }
+
+// LambdaAPI is the narrow interface the bot needs from Lambda — only self-invoke.
+// Injectable for tests; in prod the concrete *lambdaapi.Client satisfies it.
+type LambdaAPI interface {
+	Invoke(ctx context.Context, params *lambdaapi.InvokeInput, optFns ...func(*lambdaapi.Options)) (*lambdaapi.InvokeOutput, error)
+}
+
+// selfPollEvent is the payload shape for async self-invoke that kicks off the
+// polling phase of a /start or /stop. The top-level "source" field is a
+// distinctive marker that API Gateway Discord interaction payloads cannot
+// produce; the handler entry uses it to branch between the ack and poll paths.
+//
+// See plan Amendment 2 § "Architecture".
+type selfPollEvent struct {
+	Source           string       `json:"source"` // always "self-poll"
+	InteractionToken string       `json:"interaction_token"`
+	ApplicationID    string       `json:"application_id"`
+	Game             string       `json:"game"`
+	User             selfPollUser `json:"user"`
+	Action           string       `json:"action"` // "start" | "stop"
+	InstanceID       string       `json:"instance_id"`
+	EnqueuedAt       string       `json:"enqueued_at"` // RFC3339Nano, for queue-latency observability
+}
+
+type selfPollUser struct {
+	ID       string `json:"id"`
+	Username string `json:"username,omitempty"`
+}
+
+const selfPollSource = "self-poll"
 
 // Lambda proxy request/response types
 type LambdaRequest struct {
@@ -140,12 +172,15 @@ func verifyDiscordRequest(signature, timestamp, body string) bool {
 //
 // The same pattern is used for the S3 client in polling.go (getS3Client).
 var (
-	ec2ClientOnce   sync.Once
-	ssmClientOnce   sync.Once
-	sharedEC2Client *ec2.Client
-	sharedSSMClient *ssm.Client
-	ec2ClientErr    error
-	ssmClientErr    error
+	ec2ClientOnce      sync.Once
+	ssmClientOnce      sync.Once
+	lambdaClientOnce   sync.Once
+	sharedEC2Client    *ec2.Client
+	sharedSSMClient    *ssm.Client
+	sharedLambdaClient *lambdaapi.Client
+	ec2ClientErr       error
+	ssmClientErr       error
+	lambdaClientErr    error
 )
 
 func newEC2Client(ctx context.Context) (*ec2.Client, error) {
@@ -188,6 +223,27 @@ func getSSMClient(ctx context.Context) (*ssm.Client, error) {
 		sharedSSMClient, ssmClientErr = newSSMClient(ctx)
 	})
 	return sharedSSMClient, ssmClientErr
+}
+
+func newLambdaClient(ctx context.Context) (*lambdaapi.Client, error) {
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = "eu-north-1"
+	}
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return nil, err
+	}
+	return lambdaapi.NewFromConfig(cfg), nil
+}
+
+// getLambdaClient returns the shared Lambda client (used by the ack path to
+// self-invoke the poll flow). Same sync.Once pattern as EC2/SSM.
+func getLambdaClient(ctx context.Context) (*lambdaapi.Client, error) {
+	lambdaClientOnce.Do(func() {
+		sharedLambdaClient, lambdaClientErr = newLambdaClient(ctx)
+	})
+	return sharedLambdaClient, lambdaClientErr
 }
 
 // getSSMParam reads an SSM parameter; returns "" if the parameter does not exist.
@@ -337,6 +393,36 @@ func discordAppID() string {
 	return os.Getenv("DISCORD_APP_ID")
 }
 
+// selfFunctionName returns the Lambda function name to self-invoke. Lambda
+// auto-populates AWS_LAMBDA_FUNCTION_NAME in the runtime env.
+func selfFunctionName() string {
+	return os.Getenv("AWS_LAMBDA_FUNCTION_NAME")
+}
+
+// dispatchSelfPoll marshals and async-invokes the bot Lambda with a self-poll
+// event. Returns the invoke error (nil on success). The ack handler uses this
+// to hand off the polling phase before returning the Discord type-5 response.
+func dispatchSelfPoll(ctx context.Context, client LambdaAPI, functionName string, event selfPollEvent) error {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal self-poll event: %w", err)
+	}
+	out, err := client.Invoke(ctx, &lambdaapi.InvokeInput{
+		FunctionName:   aws.String(functionName),
+		InvocationType: lambdatypes.InvocationTypeEvent,
+		Payload:        payload,
+	})
+	if err != nil {
+		return fmt.Errorf("lambda invoke: %w", err)
+	}
+	// For InvocationTypeEvent the async queue returns 202 on success. Anything
+	// >= 300 is a dispatch failure (throttle, perm, etc.).
+	if out.StatusCode >= 300 {
+		return fmt.Errorf("lambda invoke non-success status: %d", out.StatusCode)
+	}
+	return nil
+}
+
 // --- handler paths ---
 
 func handleStatusCommand(ctx context.Context, client EC2API, s3Client S3API, gameName string) InteractionResponse {
@@ -397,86 +483,91 @@ func handleStatusCommand(ctx context.Context, client EC2API, s3Client S3API, gam
 	return ephemeralEmbedResponse(lineEmbed("", fmt.Sprintf("%s · unknown state", gameName)))
 }
 
-// handleStartCommand — synchronous state check + idempotency; returns a
-// deferred response when the state is "stopped" so the poller can take over.
-// If a poller should run, it is returned via pollRunner (non-nil) and the caller
-// must invoke it after the HTTP response is written.
+// handleStartCommand — synchronous state check + idempotency; on the transition
+// path (state=stopped) it calls StartInstances, dispatches a self-poll invoke,
+// and returns the Discord deferred response. Polling runs in a separate Lambda
+// invocation (see handleSelfPoll) — this handler never blocks.
 func handleStartCommand(
 	ctx context.Context,
 	ec2Client EC2API,
 	ssmClient SSMAPI,
 	s3Client S3API,
-	userID, gameName, interactionToken string,
-) (InteractionResponse, pollRunner) {
+	lambdaClient LambdaAPI,
+	functionName, userID, gameName, interactionToken string,
+) InteractionResponse {
 	if !isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertUnauthorizedHeadline,
 			copyAlertUnauthorizedBody,
 			copyHintRoleMissing,
-		)), nil
+		))
 	}
 
 	info, err := findInstanceByGame(ctx, ec2Client, gameName)
 	if err != nil {
-		log.Printf("handleStartCommand: EC2 error finding instance for game %q: %v", gameName, err)
+		log.Printf("[ack] handleStartCommand: EC2 error finding instance for game %q: %v", gameName, err)
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertSomethingSideways,
 			"i couldn't light the fire just now.",
 			fmt.Sprintf(copyHintEC2ErrorFmt, "describe_instances"),
-		)), nil
+		))
 	}
 	if info.State == "not_found" {
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertNoSuchFire,
 			"no fire here by that name.",
 			fmt.Sprintf(copyHintTryStatusFmt, gameName),
-		)), nil
+		))
 	}
 	if info.State == "multiple" {
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertTwoFires,
 			"i found more than one — that shouldn't happen.",
 			copyHintTagCollision,
-		)), nil
+		))
 	}
 
-	// Idempotency: state ∈ {running, pending, stopping} → ephemeral Line, no start, no defer.
+	// Idempotency: state ∈ {running, pending, stopping} → ephemeral Line, no start, no self-invoke.
 	switch info.State {
 	case "running":
 		elapsed := formatElapsed(elapsedSince(info.LaunchTime))
-		return ephemeralEmbedResponse(lineEmbed("running", fmt.Sprintf(copyStartAlreadyRunning, elapsed, info.PublicIP))), nil
+		return ephemeralEmbedResponse(lineEmbed("running", fmt.Sprintf(copyStartAlreadyRunning, elapsed, info.PublicIP)))
 	case "pending":
 		elapsed := formatElapsed(elapsedSince(info.LaunchTime))
-		return ephemeralEmbedResponse(lineEmbed("pending", fmt.Sprintf(copyStartAlreadyLighting, elapsed))), nil
+		return ephemeralEmbedResponse(lineEmbed("pending", fmt.Sprintf(copyStartAlreadyLighting, elapsed)))
 	case "stopping":
-		return ephemeralEmbedResponse(lineEmbed("stopping", copyStartWhileStopping)), nil
+		return ephemeralEmbedResponse(lineEmbed("stopping", copyStartWhileStopping))
 	}
 
-	// state == "stopped": call StartInstances, defer, spawn poller.
+	// state == "stopped": call StartInstances, self-invoke poll, return deferred ACK.
 	if err := startInstance(ctx, ec2Client, info.InstanceID); err != nil {
-		log.Printf("handleStartCommand: EC2 error starting instance %q for game %q: %v", info.InstanceID, gameName, err)
+		log.Printf("[ack] handleStartCommand: EC2 error starting instance %q for game %q: %v", info.InstanceID, gameName, err)
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertSomethingSideways,
 			"i couldn't light the fire just now.",
 			fmt.Sprintf(copyHintEC2ErrorFmt, "start_instances"),
-		)), nil
+		))
 	}
 
-	cfg := pollConfig{
-		Game:       gameName,
-		Action:     "start",
-		UserID:     userID,
-		InstanceID: info.InstanceID,
-		AppID:      discordAppID(),
-		Token:      interactionToken,
-		Region:     awsRegion(),
-		EC2Client:  ec2Client,
-		S3Client:   s3Client,
+	event := selfPollEvent{
+		Source:           selfPollSource,
+		InteractionToken: interactionToken,
+		ApplicationID:    discordAppID(),
+		Game:             gameName,
+		User:             selfPollUser{ID: userID},
+		Action:           "start",
+		InstanceID:       info.InstanceID,
+		EnqueuedAt:       time.Now().UTC().Format(time.RFC3339Nano),
 	}
-	runner := func(pollCtx context.Context) {
-		pollStartFlow(pollCtx, cfg, time.Now())
+	if err := dispatchSelfPoll(ctx, lambdaClient, functionName, event); err != nil {
+		log.Printf("[ack] handleStartCommand: self-invoke failed for game %q: %v", gameName, err)
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertSomethingSideways,
+			"i lit the fire but couldn't queue the tending.",
+			fmt.Sprintf(copyHintEC2ErrorFmt, "lambda_invoke"),
+		))
 	}
-	return deferredResponse(), runner
+	return deferredResponse()
 }
 
 // handleStopCommand mirrors handleStartCommand for /stop.
@@ -485,38 +576,39 @@ func handleStopCommand(
 	ec2Client EC2API,
 	ssmClient SSMAPI,
 	s3Client S3API,
-	userID, gameName, interactionToken string,
-) (InteractionResponse, pollRunner) {
+	lambdaClient LambdaAPI,
+	functionName, userID, gameName, interactionToken string,
+) InteractionResponse {
 	if !isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertUnauthorizedHeadline,
 			copyAlertUnauthorizedBody,
 			copyHintRoleMissing,
-		)), nil
+		))
 	}
 
 	info, err := findInstanceByGame(ctx, ec2Client, gameName)
 	if err != nil {
-		log.Printf("handleStopCommand: EC2 error finding instance for game %q: %v", gameName, err)
+		log.Printf("[ack] handleStopCommand: EC2 error finding instance for game %q: %v", gameName, err)
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertSomethingSideways,
 			"i couldn't bank the coals just now.",
 			fmt.Sprintf(copyHintEC2ErrorFmt, "describe_instances"),
-		)), nil
+		))
 	}
 	if info.State == "not_found" {
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertNoSuchFire,
 			"no fire here by that name.",
 			fmt.Sprintf(copyHintTryStatusFmt, gameName),
-		)), nil
+		))
 	}
 	if info.State == "multiple" {
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertTwoFires,
 			"i found more than one — that shouldn't happen.",
 			copyHintTagCollision,
-		)), nil
+		))
 	}
 
 	// Idempotency.
@@ -527,46 +619,45 @@ func handleStopCommand(
 			backup = backupElapsedString(ctx, s3Client, gameName, awsRegion())
 		}
 		if backup == "" {
-			return ephemeralEmbedResponse(lineEmbed("stopped", copyStopAlreadyOutNever)), nil
+			return ephemeralEmbedResponse(lineEmbed("stopped", copyStopAlreadyOutNever))
 		}
-		return ephemeralEmbedResponse(lineEmbed("stopped", fmt.Sprintf(copyStopAlreadyOut, backup))), nil
+		return ephemeralEmbedResponse(lineEmbed("stopped", fmt.Sprintf(copyStopAlreadyOut, backup)))
 	case "stopping":
-		return ephemeralEmbedResponse(lineEmbed("stopping", copyStopAlreadyDyingDown)), nil
+		return ephemeralEmbedResponse(lineEmbed("stopping", copyStopAlreadyDyingDown))
 	case "pending":
-		return ephemeralEmbedResponse(lineEmbed("pending", copyStopWhilePending)), nil
+		return ephemeralEmbedResponse(lineEmbed("pending", copyStopWhilePending))
 	}
 
-	// state == "running": call StopInstances, defer, spawn poller.
+	// state == "running": call StopInstances, self-invoke poll, return deferred ACK.
 	if err := stopInstance(ctx, ec2Client, info.InstanceID); err != nil {
-		log.Printf("handleStopCommand: EC2 error stopping instance %q for game %q: %v", info.InstanceID, gameName, err)
+		log.Printf("[ack] handleStopCommand: EC2 error stopping instance %q for game %q: %v", info.InstanceID, gameName, err)
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertSomethingSideways,
 			"i couldn't bank the coals just now.",
 			fmt.Sprintf(copyHintEC2ErrorFmt, "stop_instances"),
-		)), nil
+		))
 	}
 
-	cfg := pollConfig{
-		Game:       gameName,
-		Action:     "stop",
-		UserID:     userID,
-		InstanceID: info.InstanceID,
-		AppID:      discordAppID(),
-		Token:      interactionToken,
-		Region:     awsRegion(),
-		EC2Client:  ec2Client,
-		S3Client:   s3Client,
+	event := selfPollEvent{
+		Source:           selfPollSource,
+		InteractionToken: interactionToken,
+		ApplicationID:    discordAppID(),
+		Game:             gameName,
+		User:             selfPollUser{ID: userID},
+		Action:           "stop",
+		InstanceID:       info.InstanceID,
+		EnqueuedAt:       time.Now().UTC().Format(time.RFC3339Nano),
 	}
-	runner := func(pollCtx context.Context) {
-		pollStopFlow(pollCtx, cfg, time.Now())
+	if err := dispatchSelfPoll(ctx, lambdaClient, functionName, event); err != nil {
+		log.Printf("[ack] handleStopCommand: self-invoke failed for game %q: %v", gameName, err)
+		return ephemeralEmbedResponse(alertEmbed(
+			copyAlertSomethingSideways,
+			"i banked the coals but couldn't queue the tending.",
+			fmt.Sprintf(copyHintEC2ErrorFmt, "lambda_invoke"),
+		))
 	}
-	return deferredResponse(), runner
+	return deferredResponse()
 }
-
-// pollRunner is the closure spawned after the Discord 3s-ack response is sent.
-// The Lambda handler blocks on the runner (via WaitGroup) so the process stays
-// alive until the poll loop is finished and the terminal PATCH is issued.
-type pollRunner func(ctx context.Context)
 
 func handleHelpCommand(gameName string) InteractionResponse {
 	if gameName == "" {
@@ -597,15 +688,23 @@ func handleHelloCommand(ctx context.Context, ssmClient SSMAPI, userID, gameName 
 	return ephemeralEmbedResponse(lineEmbed("", msg))
 }
 
-// handleInteraction dispatches a single Discord slash command and returns both
-// the immediate InteractionResponse and an optional pollRunner that must run
-// after the HTTP response has been written back to Discord.
+// handleInteraction dispatches a single Discord slash command. Returns the
+// LambdaResponse that will be written back to Discord via API Gateway.
 //
-// Kept synchronous (no spawning) so tests can assert responses without
-// coordinating goroutines; the caller (handler) manages the WaitGroup.
-func handleInteraction(ctx context.Context, interaction Interaction, ec2Client EC2API, ssmClient SSMAPI, s3Client S3API) (LambdaResponse, pollRunner) {
+// The /start and /stop transition paths dispatch an async self-invoke
+// internally (see handleStartCommand / handleStopCommand) so this handler
+// never blocks on background work.
+func handleInteraction(
+	ctx context.Context,
+	interaction Interaction,
+	ec2Client EC2API,
+	ssmClient SSMAPI,
+	s3Client S3API,
+	lambdaClient LambdaAPI,
+	functionName string,
+) LambdaResponse {
 	if interaction.Type != discordSlashCommand {
-		return jsonResponse(400, map[string]string{"error": "Not a slash command"}), nil
+		return jsonResponse(400, map[string]string{"error": "Not a slash command"})
 	}
 
 	// Guild allowlist check — reject requests from non-allowlisted guilds (fail closed)
@@ -614,7 +713,7 @@ func handleInteraction(ctx context.Context, interaction Interaction, ec2Client E
 			copyAlertGuildBlocked,
 			"this guild isn't on the allowlist.",
 			"err · guild_not_allowed",
-		))), nil
+		)))
 	}
 
 	userID := ""
@@ -631,22 +730,19 @@ func handleInteraction(ctx context.Context, interaction Interaction, ec2Client E
 			"unknown action",
 			"try one of: status, start, stop, help, hello.",
 			fmt.Sprintf(copyHintTryStatusFmt, gameName),
-		))), nil
+		)))
 	}
 
 	action := interaction.Data.Options[0].Name
 
-	var (
-		interactionResp InteractionResponse
-		runner          pollRunner
-	)
+	var interactionResp InteractionResponse
 	switch action {
 	case "status":
 		interactionResp = handleStatusCommand(ctx, ec2Client, s3Client, gameName)
 	case "start":
-		interactionResp, runner = handleStartCommand(ctx, ec2Client, ssmClient, s3Client, userID, gameName, interaction.Token)
+		interactionResp = handleStartCommand(ctx, ec2Client, ssmClient, s3Client, lambdaClient, functionName, userID, gameName, interaction.Token)
 	case "stop":
-		interactionResp, runner = handleStopCommand(ctx, ec2Client, ssmClient, s3Client, userID, gameName, interaction.Token)
+		interactionResp = handleStopCommand(ctx, ec2Client, ssmClient, s3Client, lambdaClient, functionName, userID, gameName, interaction.Token)
 	case "help":
 		interactionResp = handleHelpCommand(gameName)
 	case "hello":
@@ -659,10 +755,43 @@ func handleInteraction(ctx context.Context, interaction Interaction, ec2Client E
 		))
 	}
 
-	return jsonResponse(200, interactionResp), runner
+	return jsonResponse(200, interactionResp)
 }
 
-func handler(ctx context.Context, req LambdaRequest) (LambdaResponse, error) {
+// handler is the Lambda entry point. It handles two event shapes:
+//
+//  1. API Gateway HTTP v2 request (a Discord interaction) — the "[ack]" path.
+//     Verifies signature, dispatches the slash command. /start and /stop
+//     transition paths asynchronously self-invoke this same Lambda with a
+//     self-poll event, then return the type-5 deferred ACK immediately.
+//
+//  2. Self-poll event — the "[poll]" path. Runs the poll loop which PATCHes
+//     the original Discord message as EC2 transitions, using the token from
+//     the event. INVARIANT: self-poll branch never dispatches self-invoke.
+//
+// A raw JSON peek on top-level "source" routes between the two.
+func handler(ctx context.Context, raw json.RawMessage) (LambdaResponse, error) {
+	var peek struct {
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal(raw, &peek); err == nil && peek.Source == selfPollSource {
+		return handleSelfPoll(ctx, raw)
+	}
+
+	// Default: API Gateway HTTP v2 request with a Discord interaction in the body.
+	var req LambdaRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		log.Printf("[ack] handler: unmarshal LambdaRequest: %v", err)
+		return jsonResponse(400, map[string]string{"error": "bad request"}), nil
+	}
+	return handleAckRequest(ctx, req)
+}
+
+// handleAckRequest is the fast, 3s-window path for Discord interactions.
+// It verifies the signature, resolves shared clients, dispatches the command,
+// and returns. Never blocks on background work — the /start and /stop
+// transition paths enqueue a self-poll via Lambda async invoke before returning.
+func handleAckRequest(ctx context.Context, req LambdaRequest) (LambdaResponse, error) {
 	signature := req.Headers["x-signature-ed25519"]
 	if signature == "" {
 		signature = req.Headers["X-Signature-Ed25519"]
@@ -684,7 +813,7 @@ func handler(ctx context.Context, req LambdaRequest) (LambdaResponse, error) {
 		Type int `json:"type"`
 	}
 	if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
-		log.Printf("Error parsing body: %v", err)
+		log.Printf("[ack] handleAckRequest: parse body: %v", err)
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
 	}
 
@@ -695,53 +824,106 @@ func handler(ctx context.Context, req LambdaRequest) (LambdaResponse, error) {
 
 	var interaction Interaction
 	if err := json.Unmarshal([]byte(req.Body), &interaction); err != nil {
-		log.Printf("Error parsing interaction: %v", err)
+		log.Printf("[ack] handleAckRequest: parse interaction: %v", err)
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
 	}
 
 	ec2Client, err := getEC2Client(ctx)
 	if err != nil {
-		log.Printf("Error creating EC2 client: %v", err)
+		log.Printf("[ack] handleAckRequest: EC2 client init: %v", err)
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
 	}
-
 	ssmClient, err := getSSMClient(ctx)
 	if err != nil {
-		log.Printf("Error creating SSM client: %v", err)
+		log.Printf("[ack] handleAckRequest: SSM client init: %v", err)
+		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
+	}
+	lambdaClient, err := getLambdaClient(ctx)
+	if err != nil {
+		log.Printf("[ack] handleAckRequest: Lambda client init: %v", err)
 		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
 	}
 
 	// S3 client — best-effort; BACKUP field is optional and we don't want a
 	// transient S3 config failure to break /start or /stop.
-	//
 	// Typed as the S3API interface (not *s3.Client) so we can pass a bare `nil`
-	// on error — passing a typed-nil *s3.Client through the interface would
-	// create a non-nil S3API with a nil concrete value, breaking the `if
-	// s3Client != nil` checks in the handlers.
+	// on error — a typed-nil *s3.Client through the interface would create a
+	// non-nil S3API with a nil concrete value, breaking `if s3Client != nil`.
 	var s3Client S3API
 	if c, err := getS3Client(ctx); err != nil {
-		log.Printf("Error creating S3 client (backup lookups will be skipped): %v", err)
+		log.Printf("[ack] handleAckRequest: S3 client init (backup lookups will be skipped): %v", err)
 	} else {
 		s3Client = c
 	}
 
-	resp, runner := handleInteraction(ctx, interaction, ec2Client, ssmClient, s3Client)
-
-	// If the handler returned a deferred response, run the poll loop before
-	// letting the Lambda exit. The loop PATCHes the original message; once it
-	// returns we can let the Lambda process shut down.
-	if runner != nil {
-		// The poll loop uses its own derived context off `ctx` so it honours the
-		// Lambda deadline; we just wait for it to finish here.
-		runner(ctx)
-	}
-
-	return resp, nil
+	return handleInteraction(ctx, interaction, ec2Client, ssmClient, s3Client, lambdaClient, selfFunctionName()), nil
 }
 
-// Compile-time assertions that *ec2.Client and *ssm.Client satisfy their interfaces.
+// handleSelfPoll runs the poll loop for a /start or /stop that the ack path
+// kicked off via async self-invoke. It never dispatches another self-invoke.
+//
+// INVARIANT: self-poll branch never dispatches self-invoke. The ack→poll
+// hand-off is one-way; any retry policy lives at the Lambda async-invoke
+// config layer (maximum_retry_attempts = 0 in terraform/bot/), not in code.
+func handleSelfPoll(ctx context.Context, raw json.RawMessage) (LambdaResponse, error) {
+	var event selfPollEvent
+	if err := json.Unmarshal(raw, &event); err != nil {
+		log.Printf("[poll] handleSelfPoll: unmarshal event: %v", err)
+		return jsonResponse(400, map[string]string{"error": "bad self-poll event"}), nil
+	}
+
+	// Queue-latency observability (Architect risk #4): record how long the event
+	// sat in the Lambda async queue before this invocation picked it up. Drift
+	// eats into the 15-min Discord interaction-token budget.
+	enqueuedAt := time.Now()
+	if t, err := time.Parse(time.RFC3339Nano, event.EnqueuedAt); err == nil {
+		enqueuedAt = t
+		log.Printf("[poll] handleSelfPoll: queue_latency_ms=%d game=%s action=%s", time.Since(t).Milliseconds(), event.Game, event.Action)
+	} else {
+		log.Printf("[poll] handleSelfPoll: parse enqueued_at %q failed: %v (continuing with now())", event.EnqueuedAt, err)
+	}
+
+	ec2Client, err := getEC2Client(ctx)
+	if err != nil {
+		log.Printf("[poll] handleSelfPoll: EC2 client init: %v", err)
+		return jsonResponse(500, map[string]string{"error": "Internal server error"}), nil
+	}
+	var s3Client S3API
+	if c, err := getS3Client(ctx); err != nil {
+		log.Printf("[poll] handleSelfPoll: S3 client init (backup field will be omitted): %v", err)
+	} else {
+		s3Client = c
+	}
+
+	cfg := pollConfig{
+		Game:       event.Game,
+		Action:     event.Action,
+		UserID:     event.User.ID,
+		InstanceID: event.InstanceID,
+		AppID:      event.ApplicationID,
+		Token:      event.InteractionToken,
+		Region:     awsRegion(),
+		EC2Client:  ec2Client,
+		S3Client:   s3Client,
+	}
+
+	switch event.Action {
+	case "start":
+		pollStartFlow(ctx, cfg, enqueuedAt)
+	case "stop":
+		pollStopFlow(ctx, cfg, enqueuedAt)
+	default:
+		log.Printf("[poll] handleSelfPoll: unknown action %q", event.Action)
+		return jsonResponse(400, map[string]string{"error": "unknown action"}), nil
+	}
+
+	return jsonResponse(200, map[string]string{"status": "ok"}), nil
+}
+
+// Compile-time assertions that SDK clients satisfy the narrow interfaces.
 var _ EC2API = (*ec2.Client)(nil)
 var _ SSMAPI = (*ssm.Client)(nil)
+var _ LambdaAPI = (*lambdaapi.Client)(nil)
 
 func main() {
 	lambda.Start(handler)
