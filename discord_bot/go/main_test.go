@@ -698,12 +698,14 @@ func TestHandleInteraction_StatusRunning(t *testing.T) {
 
 	ir := parseInteractionResponse(t, resp)
 	embed := firstEmbed(t, ir)
-	// /status Line copy still uses the pre-v1.5 "burning" literal in the
-	// current body shape (`%s · ● burning · ...`). The state-label rename
-	// in v1.5 (burning → lit) applies to Hero embeds; Line-layout copy is
-	// deferred for a separate review pass (user decision 2026-04-19).
-	if !strings.Contains(embedBody(embed), "burning") {
-		t.Errorf("expected 'burning' in /status Line body, got: %s", embedBody(embed))
+	// v1.5 Line format: `<Game> · ● lit · <addr> · <uptime> · backup <X> ago`.
+	// Label rename (burning → lit) and shape alignment with BRAND.md v1.5
+	// §"Line" landed together in the Line-pass PR.
+	if !strings.Contains(embedBody(embed), "● lit") {
+		t.Errorf("expected '● lit' state dot + label in /status Line body, got: %s", embedBody(embed))
+	}
+	if strings.Contains(embedBody(embed), "burning") {
+		t.Errorf("v1.5: Line should not contain 'burning' anymore, got: %s", embedBody(embed))
 	}
 	if !strings.Contains(embedBody(embed), "1.2.3.4") {
 		t.Errorf("expected IP address in status, got: %s", embedBody(embed))
@@ -757,8 +759,8 @@ func TestHandleInteraction_StartAuthorized_AlreadyRunning(t *testing.T) {
 
 	ir := parseInteractionResponse(t, resp)
 	embed := firstEmbed(t, ir)
-	if !strings.Contains(embedBody(embed), "fire's already ● burning") {
-		t.Errorf("expected 'fire's already ● burning' idempotency copy, got: %s", embedBody(embed))
+	if !strings.Contains(embedBody(embed), "fire's already ● lit") {
+		t.Errorf("expected 'fire's already ● lit' idempotency copy, got: %s", embedBody(embed))
 	}
 	if !strings.Contains(embedBody(embed), "5.6.7.8") {
 		t.Errorf("expected bare address in body, got: %s", embedBody(embed))
@@ -1810,10 +1812,82 @@ func TestBackupElapsedString_NoDoubleAgo(t *testing.T) {
 	if strings.Contains(got, "ago") {
 		t.Errorf("helper output should not contain 'ago' anymore, got %q", got)
 	}
-	// And the /start-already-burning idempotency Line (once formatted with this helper's output)
-	// should read "backup 10h 45m ago" — not "backup 10h 45m ago ago".
-	composed := fmt.Sprintf(copyStartAlreadyRunningWithBackup, "30s", "1.2.3.4", got)
+	// And the /start-already-lit idempotency Line (once formatted with this helper's output)
+	// should read "backup 10h 45m ago" — not "backup 10h 45m ago ago". v1.5 param
+	// order: addr, uptime, backup.
+	composed := fmt.Sprintf(copyStartAlreadyRunningWithBackup, "1.2.3.4", "30s", got)
 	if strings.Contains(composed, "ago ago") {
 		t.Errorf("composed Line body contains 'ago ago' — the double-ago bug is back: %q", composed)
+	}
+}
+
+// --- BRAND v1.5 Line-pass: shape + label alignment ---
+
+func TestStatusRunning_v1_5_Shape(t *testing.T) {
+	// /status running Line should read: `<Game> · ● lit · <addr> · <uptime> · backup <X> ago`
+	// per BRAND.md v1.5 §"Line". No "burning" literal anywhere.
+	ssmClient := ssmWithGuild("g1")
+	mock := &mockEC2Client{describeOutput: runningInstanceWithID("i-test", "51.20.112.157")}
+	resp := runHandle(context.Background(), interactionWith("valheim", "status", "", "g1"), mock, ssmClient)
+	ir := parseInteractionResponse(t, resp)
+	body := embedBody(firstEmbed(t, ir))
+
+	if !strings.Contains(body, "● lit ·") {
+		t.Errorf("expected '● lit ·' dot+label in v1.5 Line, got: %s", body)
+	}
+	if !strings.Contains(body, "51.20.112.157") {
+		t.Errorf("expected bare address in v1.5 Line, got: %s", body)
+	}
+	if strings.Contains(body, "burning") {
+		t.Errorf("v1.5 Line should not contain 'burning' anymore, got: %s", body)
+	}
+	// Order check: address before "never burned" / "backup X ago" trailer.
+	lit := strings.Index(body, "● lit")
+	addr := strings.Index(body, "51.20.112.157")
+	if lit < 0 || addr < 0 || addr < lit {
+		t.Errorf("expected '● lit' before address, got: %s", body)
+	}
+}
+
+func TestStartAlreadyRunning_v1_5_Shape(t *testing.T) {
+	// Idempotent /start-while-running shape: `fire's already ● lit · <addr> · <uptime>`
+	// (+ `· backup <X> ago` when backup present). No "lit <X> ago · <addr>" ordering —
+	// that was the v1.4 shape and produced awkward double-"lit" after the label rename.
+	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
+	mock := &mockEC2Client{describeOutput: runningInstanceWithID("i-test", "5.6.7.8")}
+	resp := runHandle(context.Background(), interactionWith("mc", "start", "admin", "g1"), mock, ssmClient)
+	body := embedBody(firstEmbed(t, parseInteractionResponse(t, resp)))
+
+	if !strings.Contains(body, "fire's already ● lit ·") {
+		t.Errorf("expected 'fire's already ● lit · ' prefix, got: %s", body)
+	}
+	if strings.Contains(body, "burning") {
+		t.Errorf("v1.5 idempotency Line should not say 'burning', got: %s", body)
+	}
+	// The order must be addr before uptime (matches brand Line shape).
+	litPill := strings.Index(body, "● lit")
+	addr := strings.Index(body, "5.6.7.8")
+	if litPill < 0 || addr < 0 || addr < litPill {
+		t.Errorf("expected addr after '● lit', got: %s", body)
+	}
+}
+
+func TestStatusPending_v1_5_Uses_LitXAgo(t *testing.T) {
+	// v1.5 pending copy shape: `<Game> · ● lighting · lit <X> ago · ~2 min total`.
+	// Replaces v1.4's "started <X> ago" phrasing with "lit <X> ago" per BRAND.md
+	// v1.5 starting-state copy shape.
+	ssmClient := ssmWithGuild("g1")
+	mock := &mockEC2Client{describeOutput: pendingInstanceWithID("i-test")}
+	resp := runHandle(context.Background(), interactionWith("valheim", "status", "", "g1"), mock, ssmClient)
+	body := embedBody(firstEmbed(t, parseInteractionResponse(t, resp)))
+
+	if !strings.Contains(body, "● lighting") {
+		t.Errorf("expected '● lighting' in pending status, got: %s", body)
+	}
+	if !strings.Contains(body, "lit ") || !strings.Contains(body, "ago") {
+		t.Errorf("expected 'lit <X> ago' idiom in pending status, got: %s", body)
+	}
+	if strings.Contains(body, "started") {
+		t.Errorf("v1.5: pending copy should not say 'started' anymore, got: %s", body)
 	}
 }
