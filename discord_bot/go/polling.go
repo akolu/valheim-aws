@@ -84,11 +84,12 @@ func latestBackupTime(ctx context.Context, client S3API, game, region string) (*
 
 // backupElapsedString returns either an elapsed string ("15m ago") or empty when
 // the bucket is empty / lookup errors. Callers that distinguish "empty" from
-// "error" should use latestBackupTime directly.
-func backupElapsedString(ctx context.Context, client S3API, game, region string) string {
+// "error" should use latestBackupTime directly. logTag is the caller's path
+// prefix ("[ack] " or "[poll] ") — `backupElapsedString` is used from both.
+func backupElapsedString(ctx context.Context, client S3API, game, region, logTag string) string {
 	t, err := latestBackupTime(ctx, client, game, region)
 	if err != nil {
-		log.Printf("backupElapsedString: s3 lookup for game %q failed: %v", game, err)
+		log.Printf("%sbackupElapsedString: s3 lookup for game %q failed: %v", logTag, game, err)
 		return ""
 	}
 	if t == nil {
@@ -388,16 +389,25 @@ func deriveDeadline(parent context.Context, reserve time.Duration) (context.Cont
 }
 
 // Terminal-state sets for each action's poll.
+//
+// `not_found` / `multiple` are included for both actions: if the instance
+// disappears or splits mid-poll (tag race, manual termination, operator
+// intervention), we exit cleanly with an interrupted message rather than
+// spinning the full 170s deadline (DA finding #4).
 var (
 	startTerminals = map[string]struct{}{
-		"running":  {},
-		"stopping": {},
-		"stopped":  {},
+		"running":   {},
+		"stopping":  {},
+		"stopped":   {},
+		"not_found": {},
+		"multiple":  {},
 	}
 	stopTerminals = map[string]struct{}{
-		"stopped": {},
-		"running": {},
-		"pending": {},
+		"stopped":   {},
+		"running":   {},
+		"pending":   {},
+		"not_found": {},
+		"multiple":  {},
 	}
 )
 
@@ -410,7 +420,10 @@ func buildStartInFlight(cfg pollConfig, elapsed time.Duration, _ string) Embed {
 
 func buildStartTerminal(ctx context.Context, cfg pollConfig, info instanceInfo, deadline bool) Embed {
 	if deadline {
-		return heroEmbed(cfg.Game, "stopping", "", copyStartDeadlineBody)
+		// Soft deadline during /start: ice color + "lighting" label so title
+		// matches the "still lighting…" body. Using state="stopping" would
+		// paint ice but show "dying down" — internally contradictory (UX I5).
+		return heroEmbedWithLabel(cfg.Game, labelPending, colorIce, "", copyStartDeadlineBody)
 	}
 	switch info.State {
 	case "running":
@@ -428,6 +441,11 @@ func buildStartTerminal(ctx context.Context, cfg pollConfig, info instanceInfo, 
 		)
 	case "stopping", "stopped":
 		return heroEmbed(cfg.Game, "stopped", "", copyStartInterruptedBody)
+	case "not_found":
+		// Instance vanished mid-poll — tag was removed or instance terminated.
+		return alertEmbed(copyAlertNoSuchFire, "the fire's gone — did someone retire the game?", fmt.Sprintf(copyHintTryStatusFmt, cfg.Game))
+	case "multiple":
+		return alertEmbed(copyAlertTwoFires, "i found more than one — that shouldn't happen", copyHintTagCollision)
 	}
 	// Unknown terminal — fall back to ash.
 	return heroEmbed(cfg.Game, "stopped", "", copyStartInterruptedBody)
@@ -439,6 +457,8 @@ func buildStopInFlight(cfg pollConfig, _ time.Duration, _ string) Embed {
 
 func buildStopTerminal(_ context.Context, cfg pollConfig, info instanceInfo, deadline bool) Embed {
 	if deadline {
+		// /stop soft-deadline: state="stopping" already produces ice + "dying
+		// down" consistently with the "still dying down" body — no override needed.
 		return heroEmbed(cfg.Game, "stopping", "", copyStopDeadlineBody)
 	}
 	switch info.State {
@@ -446,6 +466,10 @@ func buildStopTerminal(_ context.Context, cfg pollConfig, info instanceInfo, dea
 		return heroEmbed(cfg.Game, "stopped", fmt.Sprintf(copyLeadlinePutOut, cfg.UserID), "")
 	case "pending", "running":
 		return heroEmbed(cfg.Game, "pending", "", copyStopInterruptedBody)
+	case "not_found":
+		return alertEmbed(copyAlertNoSuchFire, "the fire's gone mid-bank — did someone retire the game?", fmt.Sprintf(copyHintTryStatusFmt, cfg.Game))
+	case "multiple":
+		return alertEmbed(copyAlertTwoFires, "i found more than one — that shouldn't happen", copyHintTagCollision)
 	}
 	return heroEmbed(cfg.Game, "stopped", "", copyStopInterruptedBody)
 }
@@ -456,6 +480,6 @@ func lookupBackup(ctx context.Context, cfg pollConfig) string {
 	if cfg.S3Client == nil || cfg.Region == "" {
 		return ""
 	}
-	return backupElapsedString(ctx, cfg.S3Client, cfg.Game, cfg.Region)
+	return backupElapsedString(ctx, cfg.S3Client, cfg.Game, cfg.Region, "[poll] ")
 }
 

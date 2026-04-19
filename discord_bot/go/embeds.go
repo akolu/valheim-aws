@@ -19,70 +19,83 @@ const (
 
 // Brand-voice copy constants. Lowercase, first-person, fire-metaphor per brand §07.
 // Grouped by consumer so the review surface is scannable.
+//
+// Voice rules (BRAND.md §"Voice rules"):
+//   1. lowercase default
+//   2. no terminal period on short statements
+//   3. no exclamation marks
+//   4. no emoji as decoration (● is a state-pill glyph, not an emoji)
 const (
 	// Idempotent Line copy (type 4, flags 64) — see plan § Idempotency.
-	copyStartAlreadyRunning  = "fire's already burning · lit %s ago · %s"
-	copyStartAlreadyLighting = "fire's already lighting · started %s ago · ~2 min total"
-	copyStartWhileStopping   = "hang on — someone's banking the coals · try again in a minute"
-	copyStopAlreadyOut       = "fire's already out · last burned %s ago"
-	copyStopAlreadyOutNever  = "fire's already out · never burned"
-	copyStopAlreadyDyingDown = "fire's already dying down · saving the world"
-	copyStopWhilePending     = "can't bank coals yet · fire's still lighting · try again in a minute"
+	// Each includes the `● <label>` state-pill dot per brand Line format.
+	copyStartAlreadyRunning    = "fire's already ● burning · lit %s ago · %s"
+	copyStartAlreadyRunningWithBackup = "fire's already ● burning · lit %s ago · %s · backup %s ago"
+	copyStartAlreadyLighting   = "fire's already ● lighting · started %s ago · ~2 min total"
+	copyStartWhileStopping     = "hang on — someone's ● banking the coals · try again in a minute"
+	copyStopAlreadyOut         = "fire's already ● out · last burned %s ago"
+	copyStopAlreadyOutNever    = "fire's already ● out · never burned"
+	copyStopAlreadyDyingDown   = "fire's already ● dying down · saving the world"
+	copyStopWhilePending       = "can't bank coals yet · fire's still ● lighting · try again in a minute"
 
 	// Polling in-flight / terminal Hero bodies.
-	copyLightingBody        = "lighting the fire… (%s)"
+	copyLightingBody         = "lighting the fire… (%s)"
 	copyStartInterruptedBody = "someone banked the coals · fire's out"
-	copyStartDeadlineBody   = "still lighting — i'll keep an eye on it"
-	copyStoppingBody        = "saving the world, banking the coals"
-	copyStopInterruptedBody = "fire's relighting · someone wasn't done"
-	copyStopDeadlineBody    = "still dying down — i'll keep an eye on it"
+	copyStartDeadlineBody    = "still lighting — i'll keep an eye on it"
+	copyStoppingBody         = "saving the world, banking the coals"
+	copyStopInterruptedBody  = "fire's relighting · someone wasn't done"
+	copyStopDeadlineBody     = "still dying down — i'll keep an eye on it"
 
 	// Hero leadlines / attributions.
 	copyLeadlineLit      = "<@%s> lit the fire"
 	copyLeadlinePutOut   = "put out by <@%s>"
 	copyAttributionLitBy = "lit by <@%s>"
 
-	// /status Line one-liners.
-	copyStatusRunning   = "%s · burning · %s · %s · backup %s ago"
-	copyStatusRunningNoBackup = "%s · burning · %s · %s · never burned"
-	copyStatusPending   = "%s · lighting · started %s ago · ~2 min total"
-	copyStatusStopping  = "%s · dying down · saving the world"
-	copyStatusStopped   = "%s · out · last burned %s ago"
-	copyStatusStoppedNever = "%s · out · never burned"
+	// /status Line one-liners — `<Game> · ● <label> · ...` per BRAND.md §"Line".
+	copyStatusRunning         = "%s · ● burning · %s · %s · backup %s ago"
+	copyStatusRunningNoBackup = "%s · ● burning · %s · %s · never burned"
+	copyStatusPending         = "%s · ● lighting · started %s ago · ~2 min total"
+	copyStatusStopping        = "%s · ● dying down · saving the world"
+	copyStatusStopped         = "%s · ● out · last burned %s ago"
+	copyStatusStoppedNever    = "%s · ● out · never burned"
 
-	// /hello Line.
-	copyHelloKeeper   = "here · ready. you're on the keeper list for this fire."
-	copyHelloVisitor  = "here · ready. you can watch; ask a keeper for access."
+	// /hello Line. No terminal period per voice rule #2.
+	copyHelloKeeper  = "here · ready. you're on the keeper list for this fire"
+	copyHelloVisitor = "here · ready. you can watch; ask a keeper for access"
 
-	// /help Line.
-	copyHelpHeader  = "_%s commands_"
-	copyHelpStatus  = "`/%s status` — check on the fire"
-	copyHelpStart   = "`/%s start` — light the fire"
-	copyHelpStop    = "`/%s stop` — bank the coals"
-	copyHelpHello   = "`/%s hello` — say hi"
-	copyHelpHelp    = "`/%s help` — this list"
+	// /help — plain text block per BRAND.md §"Help (plain text, ephemeral)".
+	// No embed chrome, mono text. %s is the game name substituted once per line.
+	copyHelpBlock = "bonfire · keeper here.\n\n/%s status    check on it\n/%s start     light the fire\n/%s stop      put it out\n/%s help      this\n\ntip: anyone in the channel can start or stop — it's a shared fire"
 
 	// Alert headlines / hints.
-	copyAlertNoSuchFire       = "no such fire"
-	copyAlertTwoFires         = "two fires by that name — ask a keeper"
-	copyAlertSomethingSideways = "something went sideways"
+	copyAlertNoSuchFire           = "no such fire"
+	copyAlertUnknownCommand       = "no command by that name"
+	copyAlertUnknownAction        = "no action by that name"
+	copyAlertTwoFires             = "two fires by that name — ask a keeper"
+	copyAlertSomethingSideways    = "something went sideways"
 	copyAlertUnauthorizedHeadline = "you can't tend this fire"
-	copyAlertUnauthorizedBody     = "ask a keeper if you'd like access."
-	copyAlertGuildBlocked     = "this bot isn't keeping a fire in this server"
+	copyAlertUnauthorizedBody     = "ask a keeper if you'd like access"
+	copyAlertGuildBlocked         = "this bot isn't keeping a fire in this server"
 
 	// Alert hints (monospace footer).
-	copyHintTagCollision  = "err · ec2_tag_collision"
-	copyHintRoleMissing   = "err · discord_role_missing"
-	copyHintEC2ErrorFmt   = "err · ec2_%s"
-	copyHintS3ErrorFmt    = "err · s3_%s"
-	copyHintTryStatusFmt  = "try · /%s status"
+	copyHintTagCollision     = "err · ec2_tag_collision"
+	copyHintRoleMissing      = "err · discord_role_missing"
+	copyHintEC2ErrorFmt      = "err · ec2_%s"
+	copyHintS3ErrorFmt       = "err · s3_%s"
+	copyHintLambdaErrorFmt   = "err · lambda_%s"
+	copyHintTryStatusFmt     = "try · /%s status"
+
+	// Alert symbols per BRAND.md §"Alert": distinct per kind so refusals
+	// don't visually overlap with errors.
+	alertSymbolError        = "◬"
+	alertSymbolUnauthorized = "◔"
+	alertSymbolNotFound     = "◌"
 
 	// State labels (pill text).
-	labelRunning   = "burning"
-	labelPending   = "lighting"
-	labelStopping  = "dying down"
-	labelStopped   = "out"
-	labelUnknown   = "unknown"
+	labelRunning  = "burning"
+	labelPending  = "lighting"
+	labelStopping = "dying down"
+	labelStopped  = "out"
+	labelUnknown  = "unknown"
 
 	// Field names — running Hero grid.
 	fieldAddress = "address"
@@ -167,6 +180,18 @@ func heroEmbed(game, state, leadline, body string) Embed {
 	}
 }
 
+// heroEmbedWithLabel lets the caller override both label and color — used for
+// the /start soft-deadline Hero (ice color + "lighting" label). Without this
+// escape hatch, we'd paint "dying down" on a still-lighting fire, which is
+// internally contradictory (the body says "still lighting…").
+func heroEmbedWithLabel(game, label string, color int, leadline, body string) Embed {
+	return Embed{
+		Title:       fmt.Sprintf("%s · %s", game, label),
+		Description: composeHeroDescription(leadline, body),
+		Color:       color,
+	}
+}
+
 // heroEmbedRunning builds the 3-field running-state Hero: ADDRESS full-width top row,
 // UPTIME + BACKUP side-by-side bottom row (WORLD omitted — see Key Decision #2).
 // backup may be empty — the BACKUP field is then omitted (per BACKUP empty-bucket fallback).
@@ -211,37 +236,54 @@ func lineEmbed(state, body string) Embed {
 	}
 }
 
-// alertEmbed builds an Alert (ephemeral) embed: danger-colored bar, two-line headline+body,
-// monospace hint footer. hint should follow the `err · <code>` or `try · <cmd>` patterns.
+// alertEmbed builds an Alert (ephemeral) embed for the `error` kind:
+// danger-colored bar, ◬ symbol, two-line headline+body, monospace hint footer.
+// Use this for infra errors and server-side failures.
+// For refusals (unauthorized / not_found), use the ash-colored variants below —
+// the brand's friendly-refusal intent (BRAND.md §"Alert") is lost if every
+// alert paints red.
 func alertEmbed(headline, body, hint string) Embed {
 	return Embed{
-		Title:       headline,
+		Title:       alertSymbolError + " " + headline,
 		Description: body,
 		Color:       colorDanger,
 		Footer:      &EmbedFooter{Text: hint},
 	}
 }
 
-// --- Response helpers (build on top of existing ephemeralResponse/publicResponse shapes) ---
+// alertEmbedUnauthorized builds an Alert for the `unauthorized` kind:
+// ash-colored bar (gentle refusal), ◔ symbol.
+func alertEmbedUnauthorized(headline, body, hint string) Embed {
+	return Embed{
+		Title:       alertSymbolUnauthorized + " " + headline,
+		Description: body,
+		Color:       colorAsh,
+		Footer:      &EmbedFooter{Text: hint},
+	}
+}
+
+// alertEmbedNotFound builds an Alert for the `not_found` kind:
+// ash-colored bar (gentle redirect), ◌ symbol.
+// Used for missing games, unknown commands, unknown actions — none are user
+// failures, just gentle "try one of these instead" responses.
+func alertEmbedNotFound(headline, body, hint string) Embed {
+	return Embed{
+		Title:       alertSymbolNotFound + " " + headline,
+		Description: body,
+		Color:       colorAsh,
+		Footer:      &EmbedFooter{Text: hint},
+	}
+}
+
+// --- Response helpers ---
 
 // ephemeralEmbedResponse returns an immediate type 4 response with embeds, flags=64.
-// Used when the handler's synchronous state check lets it short-circuit (idempotency, /status, /help, /hello, Alerts).
+// Used when the handler's synchronous state check lets it short-circuit (idempotency, /status, /hello, Alerts).
 func ephemeralEmbedResponse(embed Embed) InteractionResponse {
 	return InteractionResponse{
 		Type: discordChannelMessage,
 		Data: &InteractionResponseData{
 			Flags:  discordEphemeralFlag,
-			Embeds: []Embed{embed},
-		},
-	}
-}
-
-// publicEmbedResponse returns an immediate type 4 response with a public embed.
-// (Rarely used directly — /start and /stop defer instead; kept for symmetry and tests.)
-func publicEmbedResponse(embed Embed) InteractionResponse {
-	return InteractionResponse{
-		Type: discordChannelMessage,
-		Data: &InteractionResponseData{
 			Embeds: []Embed{embed},
 		},
 	}

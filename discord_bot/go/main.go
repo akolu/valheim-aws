@@ -127,7 +127,7 @@ type InteractionResponseData struct {
 func jsonResponse(statusCode int, body interface{}) LambdaResponse {
 	b, err := json.Marshal(body)
 	if err != nil {
-		log.Printf("jsonResponse: marshal error: %v", err)
+		log.Printf("[shared] jsonResponse: marshal error: %v", err)
 		return LambdaResponse{
 			StatusCode: 500,
 			Headers:    map[string]string{"Content-Type": "application/json"},
@@ -145,12 +145,12 @@ func verifyDiscordRequest(signature, timestamp, body string) bool {
 	pubKeyHex := os.Getenv("DISCORD_PUBLIC_KEY")
 	pubKeyBytes, err := hex.DecodeString(pubKeyHex)
 	if err != nil {
-		log.Printf("Error decoding public key: %v", err)
+		log.Printf("[ack] verifyDiscordRequest: decode public key: %v", err)
 		return false
 	}
 	sigBytes, err := hex.DecodeString(signature)
 	if err != nil {
-		log.Printf("Error decoding signature: %v", err)
+		log.Printf("[ack] verifyDiscordRequest: decode signature: %v", err)
 		return false
 	}
 	message := []byte(timestamp + body)
@@ -361,21 +361,12 @@ func stopInstance(ctx context.Context, client EC2API, instanceID string) error {
 }
 
 // ephemeralResponse returns a type 4 ephemeral response with plain-text content.
-// Preserved for backwards-compatibility with tests and a handful of simple paths;
-// new code should prefer ephemeralEmbedResponse from embeds.go for brand-colored bars.
+// Used by /help — the brand ships it as a mono text block, not an embed
+// (BRAND.md §"Help").
 func ephemeralResponse(content string) InteractionResponse {
 	return InteractionResponse{
 		Type: discordChannelMessage,
 		Data: &InteractionResponseData{Content: content, Flags: discordEphemeralFlag},
-	}
-}
-
-// publicResponse returns a type 4 public response with plain-text content.
-// Preserved for tests; new branded paths use publicEmbedResponse.
-func publicResponse(content string) InteractionResponse {
-	return InteractionResponse{
-		Type: discordChannelMessage,
-		Data: &InteractionResponseData{Content: content},
 	}
 }
 
@@ -402,6 +393,12 @@ func selfFunctionName() string {
 // dispatchSelfPoll marshals and async-invokes the bot Lambda with a self-poll
 // event. Returns the invoke error (nil on success). The ack handler uses this
 // to hand off the polling phase before returning the Discord type-5 response.
+//
+// Per AWS docs (Lambda Invoke action reference), `InvocationType: Event`
+// returns **exactly** 202 on successful async queue acceptance — any other
+// status indicates the queue refused the event, and FunctionError on a 2xx
+// means the function was invoked synchronously by mistake. Both are treated
+// as dispatch failures.
 func dispatchSelfPoll(ctx context.Context, client LambdaAPI, functionName string, event selfPollEvent) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
@@ -415,10 +412,11 @@ func dispatchSelfPoll(ctx context.Context, client LambdaAPI, functionName string
 	if err != nil {
 		return fmt.Errorf("lambda invoke: %w", err)
 	}
-	// For InvocationTypeEvent the async queue returns 202 on success. Anything
-	// >= 300 is a dispatch failure (throttle, perm, etc.).
-	if out.StatusCode >= 300 {
-		return fmt.Errorf("lambda invoke non-success status: %d", out.StatusCode)
+	if out.StatusCode != 202 {
+		return fmt.Errorf("lambda invoke expected 202, got %d", out.StatusCode)
+	}
+	if out.FunctionError != nil && *out.FunctionError != "" {
+		return fmt.Errorf("lambda invoke returned FunctionError: %s", *out.FunctionError)
 	}
 	return nil
 }
@@ -428,7 +426,7 @@ func dispatchSelfPoll(ctx context.Context, client LambdaAPI, functionName string
 func handleStatusCommand(ctx context.Context, client EC2API, s3Client S3API, gameName string) InteractionResponse {
 	info, err := findInstanceByGame(ctx, client, gameName)
 	if err != nil {
-		log.Printf("handleStatusCommand: EC2 error for game %q: %v", gameName, err)
+		log.Printf("[ack] handleStatusCommand: EC2 error for game %q: %v", gameName, err)
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertSomethingSideways,
 			"i couldn't check on the fire just now.",
@@ -436,9 +434,9 @@ func handleStatusCommand(ctx context.Context, client EC2API, s3Client S3API, gam
 		))
 	}
 	if info.State == "not_found" {
-		return ephemeralEmbedResponse(alertEmbed(
+		return ephemeralEmbedResponse(alertEmbedNotFound(
 			copyAlertNoSuchFire,
-			"no fire here by that name.",
+			"no fire here by that name",
 			fmt.Sprintf(copyHintTryStatusFmt, gameName),
 		))
 	}
@@ -455,7 +453,7 @@ func handleStatusCommand(ctx context.Context, client EC2API, s3Client S3API, gam
 		uptime := formatElapsed(elapsedSince(info.LaunchTime))
 		backup := ""
 		if s3Client != nil {
-			backup = backupElapsedString(ctx, s3Client, gameName, awsRegion())
+			backup = backupElapsedString(ctx, s3Client, gameName, awsRegion(), "[ack] ")
 		}
 		var body string
 		if backup == "" {
@@ -472,7 +470,7 @@ func handleStatusCommand(ctx context.Context, client EC2API, s3Client S3API, gam
 	case "stopped":
 		backupStr := ""
 		if s3Client != nil {
-			backupStr = backupElapsedString(ctx, s3Client, gameName, awsRegion())
+			backupStr = backupElapsedString(ctx, s3Client, gameName, awsRegion(), "[ack] ")
 		}
 		if backupStr == "" {
 			return ephemeralEmbedResponse(lineEmbed("stopped", fmt.Sprintf(copyStatusStoppedNever, gameName)))
@@ -496,7 +494,7 @@ func handleStartCommand(
 	functionName, userID, gameName, interactionToken string,
 ) InteractionResponse {
 	if !isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
-		return ephemeralEmbedResponse(alertEmbed(
+		return ephemeralEmbedResponse(alertEmbedUnauthorized(
 			copyAlertUnauthorizedHeadline,
 			copyAlertUnauthorizedBody,
 			copyHintRoleMissing,
@@ -513,9 +511,9 @@ func handleStartCommand(
 		))
 	}
 	if info.State == "not_found" {
-		return ephemeralEmbedResponse(alertEmbed(
+		return ephemeralEmbedResponse(alertEmbedNotFound(
 			copyAlertNoSuchFire,
-			"no fire here by that name.",
+			"no fire here by that name",
 			fmt.Sprintf(copyHintTryStatusFmt, gameName),
 		))
 	}
@@ -531,6 +529,15 @@ func handleStartCommand(
 	switch info.State {
 	case "running":
 		elapsed := formatElapsed(elapsedSince(info.LaunchTime))
+		// Include backup trailer when we have one — the running Line format is
+		// `... lit X ago · addr · backup Y ago` per BRAND.md §"Line".
+		backup := ""
+		if s3Client != nil {
+			backup = backupElapsedString(ctx, s3Client, gameName, awsRegion(), "[ack] ")
+		}
+		if backup != "" {
+			return ephemeralEmbedResponse(lineEmbed("running", fmt.Sprintf(copyStartAlreadyRunningWithBackup, elapsed, info.PublicIP, backup)))
+		}
 		return ephemeralEmbedResponse(lineEmbed("running", fmt.Sprintf(copyStartAlreadyRunning, elapsed, info.PublicIP)))
 	case "pending":
 		elapsed := formatElapsed(elapsedSince(info.LaunchTime))
@@ -564,7 +571,7 @@ func handleStartCommand(
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertSomethingSideways,
 			"i lit the fire but couldn't queue the tending.",
-			fmt.Sprintf(copyHintEC2ErrorFmt, "lambda_invoke"),
+			fmt.Sprintf(copyHintLambdaErrorFmt, "invoke_failed"),
 		))
 	}
 	return deferredResponse()
@@ -580,7 +587,7 @@ func handleStopCommand(
 	functionName, userID, gameName, interactionToken string,
 ) InteractionResponse {
 	if !isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
-		return ephemeralEmbedResponse(alertEmbed(
+		return ephemeralEmbedResponse(alertEmbedUnauthorized(
 			copyAlertUnauthorizedHeadline,
 			copyAlertUnauthorizedBody,
 			copyHintRoleMissing,
@@ -597,9 +604,9 @@ func handleStopCommand(
 		))
 	}
 	if info.State == "not_found" {
-		return ephemeralEmbedResponse(alertEmbed(
+		return ephemeralEmbedResponse(alertEmbedNotFound(
 			copyAlertNoSuchFire,
-			"no fire here by that name.",
+			"no fire here by that name",
 			fmt.Sprintf(copyHintTryStatusFmt, gameName),
 		))
 	}
@@ -616,7 +623,7 @@ func handleStopCommand(
 	case "stopped":
 		backup := ""
 		if s3Client != nil {
-			backup = backupElapsedString(ctx, s3Client, gameName, awsRegion())
+			backup = backupElapsedString(ctx, s3Client, gameName, awsRegion(), "[ack] ")
 		}
 		if backup == "" {
 			return ephemeralEmbedResponse(lineEmbed("stopped", copyStopAlreadyOutNever))
@@ -653,29 +660,24 @@ func handleStopCommand(
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertSomethingSideways,
 			"i banked the coals but couldn't queue the tending.",
-			fmt.Sprintf(copyHintEC2ErrorFmt, "lambda_invoke"),
+			fmt.Sprintf(copyHintLambdaErrorFmt, "invoke_failed"),
 		))
 	}
 	return deferredResponse()
 }
 
+// handleHelpCommand returns the plain-text Help surface per BRAND.md §"Help":
+// no embed chrome, mono text block, ephemeral. This is the one command where
+// Content (not an embed) is the correct shape — the brand asks for it explicitly.
 func handleHelpCommand(gameName string) InteractionResponse {
 	if gameName == "" {
-		return ephemeralEmbedResponse(alertEmbed(
-			"unknown command",
-			"ask a keeper for the right command.",
+		return ephemeralEmbedResponse(alertEmbedNotFound(
+			copyAlertUnknownCommand,
+			"ask a keeper for the right command",
 			"try · /<game> help",
 		))
 	}
-	lines := []string{
-		fmt.Sprintf(copyHelpHeader, gameName),
-		fmt.Sprintf(copyHelpStatus, gameName),
-		fmt.Sprintf(copyHelpStart, gameName),
-		fmt.Sprintf(copyHelpStop, gameName),
-		fmt.Sprintf(copyHelpHello, gameName),
-		fmt.Sprintf(copyHelpHelp, gameName),
-	}
-	return ephemeralEmbedResponse(lineEmbed("", strings.Join(lines, "\n")))
+	return ephemeralResponse(fmt.Sprintf(copyHelpBlock, gameName, gameName, gameName, gameName))
 }
 
 func handleHelloCommand(ctx context.Context, ssmClient SSMAPI, userID, gameName string) InteractionResponse {
@@ -707,11 +709,12 @@ func handleInteraction(
 		return jsonResponse(400, map[string]string{"error": "Not a slash command"})
 	}
 
-	// Guild allowlist check — reject requests from non-allowlisted guilds (fail closed)
+	// Guild allowlist check — reject requests from non-allowlisted guilds (fail closed).
+	// Framed as gentle refusal, not error: the guild owner just hasn't registered yet.
 	if !checkGuildAllowlist(ctx, interaction.GuildID, ssmClient) {
-		return jsonResponse(200, ephemeralEmbedResponse(alertEmbed(
+		return jsonResponse(200, ephemeralEmbedResponse(alertEmbedNotFound(
 			copyAlertGuildBlocked,
-			"this guild isn't on the allowlist.",
+			"this guild isn't on the allowlist",
 			"err · guild_not_allowed",
 		)))
 	}
@@ -726,9 +729,9 @@ func handleInteraction(
 	gameName := interaction.Data.Name
 
 	if len(interaction.Data.Options) == 0 {
-		return jsonResponse(200, ephemeralEmbedResponse(alertEmbed(
-			"unknown action",
-			"try one of: status, start, stop, help, hello.",
+		return jsonResponse(200, ephemeralEmbedResponse(alertEmbedNotFound(
+			copyAlertUnknownAction,
+			"try one of: status, start, stop, help, hello",
 			fmt.Sprintf(copyHintTryStatusFmt, gameName),
 		)))
 	}
@@ -748,9 +751,9 @@ func handleInteraction(
 	case "hello":
 		interactionResp = handleHelloCommand(ctx, ssmClient, userID, gameName)
 	default:
-		interactionResp = ephemeralEmbedResponse(alertEmbed(
-			"unknown command",
-			"ask a keeper for the right command.",
+		interactionResp = ephemeralEmbedResponse(alertEmbedNotFound(
+			copyAlertUnknownCommand,
+			"ask a keeper for the right command",
 			fmt.Sprintf(copyHintTryStatusFmt, gameName),
 		))
 	}
@@ -870,6 +873,16 @@ func handleSelfPoll(ctx context.Context, raw json.RawMessage) (LambdaResponse, e
 	if err := json.Unmarshal(raw, &event); err != nil {
 		log.Printf("[poll] handleSelfPoll: unmarshal event: %v", err)
 		return jsonResponse(400, map[string]string{"error": "bad self-poll event"}), nil
+	}
+
+	// Field validation — a malformed self-poll event (missing game, token,
+	// app_id, action) would otherwise slip into pollStartFlow with empty
+	// values; the 404 from a malformed webhook URL masks the root cause and
+	// costs up to 180s of Lambda wallclock. Validate up front → DLQ on drop.
+	if event.Game == "" || event.InteractionToken == "" || event.ApplicationID == "" || event.Action == "" {
+		log.Printf("[poll] handleSelfPoll: missing required field(s) in self-poll event: game=%q token_present=%t app_id=%q action=%q",
+			event.Game, event.InteractionToken != "", event.ApplicationID, event.Action)
+		return jsonResponse(400, map[string]string{"error": "missing required field"}), nil
 	}
 
 	// Queue-latency observability (Architect risk #4): record how long the event

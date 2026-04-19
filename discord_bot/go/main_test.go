@@ -753,8 +753,8 @@ func TestHandleInteraction_StartAuthorized_AlreadyRunning(t *testing.T) {
 
 	ir := parseInteractionResponse(t, resp)
 	embed := firstEmbed(t, ir)
-	if !strings.Contains(embedBody(embed), "fire's already burning") {
-		t.Errorf("expected 'fire's already burning' idempotency copy, got: %s", embedBody(embed))
+	if !strings.Contains(embedBody(embed), "fire's already ● burning") {
+		t.Errorf("expected 'fire's already ● burning' idempotency copy, got: %s", embedBody(embed))
 	}
 	if !strings.Contains(embedBody(embed), "5.6.7.8") {
 		t.Errorf("expected bare address in body, got: %s", embedBody(embed))
@@ -775,8 +775,8 @@ func TestHandleInteraction_StartAuthorized_AlreadyLighting(t *testing.T) {
 
 	ir := parseInteractionResponse(t, resp)
 	embed := firstEmbed(t, ir)
-	if !strings.Contains(embedBody(embed), "fire's already lighting") {
-		t.Errorf("expected 'fire's already lighting' idempotency copy, got: %s", embedBody(embed))
+	if !strings.Contains(embedBody(embed), "fire's already ● lighting") {
+		t.Errorf("expected 'fire's already ● lighting' idempotency copy, got: %s", embedBody(embed))
 	}
 	if mock.startCalled {
 		t.Error("StartInstances should not be called when already pending")
@@ -864,8 +864,8 @@ func TestHandleInteraction_StopAuthorized_AlreadyOut(t *testing.T) {
 
 	ir := parseInteractionResponse(t, resp)
 	embed := firstEmbed(t, ir)
-	if !strings.Contains(embedBody(embed), "fire's already out") {
-		t.Errorf("expected 'fire's already out' copy, got: %s", embedBody(embed))
+	if !strings.Contains(embedBody(embed), "fire's already ● out") {
+		t.Errorf("expected 'fire's already ● out' copy, got: %s", embedBody(embed))
 	}
 	if mock.stopCalled {
 		t.Error("StopInstances should not be called when already stopped")
@@ -880,8 +880,8 @@ func TestHandleInteraction_StopAuthorized_AlreadyDyingDown(t *testing.T) {
 
 	ir := parseInteractionResponse(t, resp)
 	embed := firstEmbed(t, ir)
-	if !strings.Contains(embedBody(embed), "fire's already dying down") {
-		t.Errorf("expected 'dying down' idempotency copy, got: %s", embedBody(embed))
+	if !strings.Contains(embedBody(embed), "fire's already ● dying down") {
+		t.Errorf("expected 'fire's already ● dying down' idempotency copy, got: %s", embedBody(embed))
 	}
 	if mock.stopCalled {
 		t.Error("StopInstances should not be called when already stopping")
@@ -913,16 +913,24 @@ func TestHandleInteraction_HelpCommand(t *testing.T) {
 	resp := runHandle(context.Background(), interactionWith("mc", "help", "", "g1"), mock, ssmClient)
 
 	ir := parseInteractionResponse(t, resp)
-	embed := firstEmbed(t, ir)
-	// Help embed should list commands in fire vocabulary
-	if !strings.Contains(embedBody(embed), "light the fire") {
-		t.Errorf("expected 'light the fire' in help, got: %s", embedBody(embed))
+	// Per BRAND.md §"Help", help is plain mono Content — no embed chrome.
+	if ir.Data.Content == "" {
+		t.Fatal("expected plain text Content in help response, got empty")
+	}
+	if len(ir.Data.Embeds) != 0 {
+		t.Errorf("help should have no embeds (BRAND.md §Help says plain text), got %d", len(ir.Data.Embeds))
 	}
 	if ir.Data.Flags != discordEphemeralFlag {
 		t.Error("help should be ephemeral")
 	}
-	if !strings.Contains(embedBody(embed), "mc") {
-		t.Errorf("expected game name in help text, got: %s", embedBody(embed))
+	if !strings.Contains(ir.Data.Content, "light the fire") {
+		t.Errorf("expected 'light the fire' in help, got: %s", ir.Data.Content)
+	}
+	if !strings.Contains(ir.Data.Content, "/mc status") {
+		t.Errorf("expected '/mc status' in help, got: %s", ir.Data.Content)
+	}
+	if !strings.Contains(ir.Data.Content, "bonfire · keeper here") {
+		t.Errorf("expected brand-book help opener, got: %s", ir.Data.Content)
 	}
 }
 
@@ -1012,8 +1020,9 @@ func TestHandleInteraction_UnknownAction(t *testing.T) {
 
 	ir := parseInteractionResponse(t, resp)
 	embed := firstEmbed(t, ir)
-	if !strings.Contains(strings.ToLower(embedBody(embed)), "unknown") {
-		t.Errorf("expected 'unknown' in response, got: %s", embedBody(embed))
+	body := strings.ToLower(embedBody(embed))
+	if !strings.Contains(body, "no command") && !strings.Contains(body, "no action") {
+		t.Errorf("expected 'no command' / 'no action' refusal copy, got: %s", embedBody(embed))
 	}
 }
 
@@ -1198,7 +1207,7 @@ func TestFormatElapsed(t *testing.T) {
 func TestBackupLookup_HappyPath(t *testing.T) {
 	at := time.Now().Add(-15 * time.Minute)
 	mock := &mockS3Client{output: s3OutputWithLastModified(at)}
-	got := backupElapsedString(context.Background(), mock, "valheim", "eu-north-1")
+	got := backupElapsedString(context.Background(), mock, "valheim", "eu-north-1", "[test] ")
 	if !strings.HasSuffix(got, "ago") {
 		t.Errorf("expected elapsed string with 'ago' suffix, got %q", got)
 	}
@@ -1206,7 +1215,7 @@ func TestBackupLookup_HappyPath(t *testing.T) {
 
 func TestBackupLookup_EmptyBucket(t *testing.T) {
 	mock := &mockS3Client{output: &s3.ListObjectsV2Output{}}
-	got := backupElapsedString(context.Background(), mock, "valheim", "eu-north-1")
+	got := backupElapsedString(context.Background(), mock, "valheim", "eu-north-1", "[test] ")
 	if got != "" {
 		t.Errorf("empty bucket should yield empty string, got %q", got)
 	}
@@ -1214,7 +1223,7 @@ func TestBackupLookup_EmptyBucket(t *testing.T) {
 
 func TestBackupLookup_S3Error(t *testing.T) {
 	mock := &mockS3Client{err: fmt.Errorf("AccessDenied")}
-	got := backupElapsedString(context.Background(), mock, "valheim", "eu-north-1")
+	got := backupElapsedString(context.Background(), mock, "valheim", "eu-north-1", "[test] ")
 	if got != "" {
 		t.Errorf("S3 error should yield empty string (logged, not surfaced), got %q", got)
 	}
@@ -1449,11 +1458,11 @@ func TestWebhookPATCHEndpoint_Shape(t *testing.T) {
 // --- Amendment 2: async self-invoke handler routing ---
 
 func TestHandler_SelfPollEventShape_DispatchesToPollLoop(t *testing.T) {
-	// A self-poll event with an unknown action should be routed to handleSelfPoll,
-	// which returns 400 for the unknown action. This proves the router took the
-	// self-poll branch (the ack path would fail earlier on signature-verification
-	// against a malformed event).
-	raw := json.RawMessage(`{"source":"self-poll","action":"bogus"}`)
+	// A self-poll event with all required fields present but an unknown action
+	// should be routed to handleSelfPoll, which returns 400 "unknown action".
+	// This proves the router took the self-poll branch AND that field
+	// validation didn't short-circuit before reaching the action switch.
+	raw := json.RawMessage(`{"source":"self-poll","game":"mc","interaction_token":"t","application_id":"a","action":"bogus"}`)
 	resp, err := handler(context.Background(), raw)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -1575,5 +1584,116 @@ func TestHandler_SelfInvokeFailure_ReturnsAlert(t *testing.T) {
 	}
 	if !strings.Contains(hint, "lambda_invoke") {
 		t.Errorf("expected hint containing 'lambda_invoke', got: %q", hint)
+	}
+}
+
+// --- Round 1 fix-pass tests ---
+
+func TestAlertEmbed_KindColoring(t *testing.T) {
+	cases := []struct {
+		name       string
+		build      func() Embed
+		wantColor  int
+		wantSymbol string
+	}{
+		{"error", func() Embed { return alertEmbed("h", "b", "err · x") }, colorDanger, alertSymbolError},
+		{"unauthorized", func() Embed { return alertEmbedUnauthorized("h", "b", "err · x") }, colorAsh, alertSymbolUnauthorized},
+		{"not_found", func() Embed { return alertEmbedNotFound("h", "b", "err · x") }, colorAsh, alertSymbolNotFound},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.build()
+			if got.Color != tc.wantColor {
+				t.Errorf("color: want %x, got %x", tc.wantColor, got.Color)
+			}
+			if !strings.HasPrefix(got.Title, tc.wantSymbol) {
+				t.Errorf("title: expected symbol %q prefix, got %q", tc.wantSymbol, got.Title)
+			}
+		})
+	}
+}
+
+func TestHandleSelfPoll_MissingField_Returns400(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload string
+	}{
+		{"missing game", `{"source":"self-poll","interaction_token":"t","application_id":"a","action":"start"}`},
+		{"missing token", `{"source":"self-poll","game":"mc","application_id":"a","action":"start"}`},
+		{"missing app_id", `{"source":"self-poll","game":"mc","interaction_token":"t","action":"start"}`},
+		{"missing action", `{"source":"self-poll","game":"mc","interaction_token":"t","application_id":"a"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := handleSelfPoll(context.Background(), json.RawMessage(tc.payload))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.StatusCode != 400 {
+				t.Errorf("expected 400, got %d — body: %s", resp.StatusCode, resp.Body)
+			}
+			if !strings.Contains(resp.Body, "missing required field") {
+				t.Errorf("expected 'missing required field' in body, got: %s", resp.Body)
+			}
+		})
+	}
+}
+
+func TestPollTerminals_IncludeNotFoundAndMultiple(t *testing.T) {
+	for _, state := range []string{"not_found", "multiple"} {
+		if _, ok := startTerminals[state]; !ok {
+			t.Errorf("startTerminals should include %q", state)
+		}
+		if _, ok := stopTerminals[state]; !ok {
+			t.Errorf("stopTerminals should include %q", state)
+		}
+	}
+}
+
+func TestBuildStartTerminal_Deadline_UsesLightingLabelAndIceColor(t *testing.T) {
+	cfg := pollConfig{Game: "valheim", Action: "start"}
+	got := buildStartTerminal(context.Background(), cfg, instanceInfo{}, true)
+	// Title should have "lighting" label (from "still lighting" body, UX I5).
+	if !strings.Contains(got.Title, labelPending) {
+		t.Errorf("deadline Hero title should contain %q label, got %q", labelPending, got.Title)
+	}
+	if got.Color != colorIce {
+		t.Errorf("deadline Hero color should be ice %x, got %x", colorIce, got.Color)
+	}
+	if !strings.Contains(got.Description, "still lighting") {
+		t.Errorf("expected 'still lighting' body, got: %s", got.Description)
+	}
+}
+
+func TestBuildStartTerminal_NotFound_AlertEmbed(t *testing.T) {
+	cfg := pollConfig{Game: "valheim", Action: "start"}
+	got := buildStartTerminal(context.Background(), cfg, instanceInfo{State: "not_found"}, false)
+	if !strings.Contains(got.Title, copyAlertNoSuchFire) {
+		t.Errorf("expected 'no such fire' alert for not_found terminal, got: %s", got.Title)
+	}
+}
+
+func TestHandleStartCommand_AlreadyRunning_IncludesBackup(t *testing.T) {
+	// UX M2 — the `/start while running` idempotency Line should include the
+	// backup trailer when s3 returns a recent backup.
+	ssmClient := ssmWithGuildAndUsers("g1", "mc", "admin")
+	mock := &mockEC2Client{describeOutput: runningInstanceWithID("i-test", "1.2.3.4")}
+	s3Mock := &mockS3Client{output: s3OutputWithLastModified(time.Now().Add(-15 * time.Minute))}
+	resp := handleInteraction(context.Background(), interactionWith("mc", "start", "admin", "g1"), mock, ssmClient, s3Mock, &mockLambdaClient{}, "bonfire_bot")
+	ir := parseInteractionResponse(t, resp)
+	embed := firstEmbed(t, ir)
+	if !strings.Contains(embedBody(embed), "backup") {
+		t.Errorf("expected backup trailer in /start-while-running Line, got: %s", embedBody(embed))
+	}
+}
+
+func TestDispatchSelfPoll_Non202Status_ReturnsError(t *testing.T) {
+	mock := &mockLambdaClient{invokeStatus: 500}
+	err := dispatchSelfPoll(context.Background(), mock, "bonfire_bot", selfPollEvent{Source: selfPollSource, Game: "mc"})
+	if err == nil {
+		t.Fatal("expected error for non-202 status")
+	}
+	if !strings.Contains(err.Error(), "202") {
+		t.Errorf("expected error mentioning 202, got: %v", err)
 	}
 }

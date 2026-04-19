@@ -49,9 +49,10 @@ resource "aws_lambda_function" "bot" {
     }
   }
 
-  dead_letter_config {
-    target_arn = aws_sqs_queue.bot_dlq.arn
-  }
+  # Async-invoke failure handling is in aws_lambda_function_event_invoke_config
+  # below. The old function-level `dead_letter_config` was removed (it targets
+  # the same DLQ and failure class, just with older semantics) — keeping both
+  # was redundant and drift-prone.
 
   tags = merge(local.tags, {
     Name = "bonfire_bot"
