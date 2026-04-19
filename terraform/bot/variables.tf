@@ -10,12 +10,11 @@ variable "discord_public_key" {
   sensitive   = true
 }
 
-# discord_application_id and discord_bot_token are NOT used by Terraform itself.
-# They are declared here so terraform.tfvars is a single source of credentials.
-# The `bonfire bot update` CLI command reads them via cli/cmd/bot.go readBotCreds()
-# to register slash commands with the Discord API.
+# discord_bot_token is NOT used by Terraform itself — declared here so terraform.tfvars
+# is a single source of credentials. The `bonfire bot update` CLI command reads it via
+# cli/cmd/bot.go readBotCreds() to register slash commands with the Discord API.
 variable "discord_application_id" {
-  description = "Discord application ID (read by `bonfire bot update` CLI, not used by Terraform)"
+  description = "Discord application ID — wired into the Lambda's DISCORD_APP_ID env var so the bot can construct webhook PATCH URLs for deferred /start and /stop responses. Also read by `bonfire bot update` to register slash commands."
   type        = string
 }
 
