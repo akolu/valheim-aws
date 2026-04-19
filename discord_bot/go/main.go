@@ -773,11 +773,30 @@ func handleInteraction(
 //     the event. INVARIANT: self-poll branch never dispatches self-invoke.
 //
 // A raw JSON peek on top-level "source" routes between the two.
+//
+// Trust boundary (Security Analyst review): the self-poll branch skips the
+// Ed25519 signature check because self-poll events originate from the Lambda
+// itself via lambda:InvokeFunction (IAM-scoped to this function's own ARN).
+// API Gateway HTTP v2 (AWS_PROXY, payload v1.0) wraps an attacker's body in
+// {"headers":{...},"body":"...",...} — a top-level "source" field from the
+// attacker's JSON sits inside `body` as a string and cannot reach the peek
+// struct. We *also* explicitly reject self-poll events carrying API Gateway
+// wrapping fields (headers/requestContext) as defense-in-depth against any
+// future payload-format change or operator mis-routing.
 func handler(ctx context.Context, raw json.RawMessage) (LambdaResponse, error) {
 	var peek struct {
-		Source string `json:"source"`
+		Source         string            `json:"source"`
+		Headers        map[string]string `json:"headers,omitempty"`
+		RequestContext json.RawMessage   `json:"requestContext,omitempty"`
 	}
 	if err := json.Unmarshal(raw, &peek); err == nil && peek.Source == selfPollSource {
+		// Defense-in-depth: a legitimate self-poll event (produced by
+		// dispatchSelfPoll) never contains API Gateway fields. Their presence
+		// signals an attacker trying to trip the signature-verification bypass.
+		if len(peek.Headers) > 0 || len(peek.RequestContext) > 0 {
+			log.Printf("[shared] handler: rejecting self-poll event that carries API Gateway wrapping fields (possible signature-bypass attempt)")
+			return jsonResponse(400, map[string]string{"error": "bad request"}), nil
+		}
 		return handleSelfPoll(ctx, raw)
 	}
 
@@ -878,7 +897,12 @@ func handleSelfPoll(ctx context.Context, raw json.RawMessage) (LambdaResponse, e
 	// Field validation — a malformed self-poll event (missing game, token,
 	// app_id, action) would otherwise slip into pollStartFlow with empty
 	// values; the 404 from a malformed webhook URL masks the root cause and
-	// costs up to 180s of Lambda wallclock. Validate up front → DLQ on drop.
+	// costs up to 180s of Lambda wallclock. Validate up front and drop the
+	// event with a 400 — from Lambda's view this is a successful async
+	// invocation (error=nil), so the event is silently dropped rather than
+	// routed to the DLQ. That's intentional: malformed self-poll payloads
+	// are a code bug on the ack side; retrying them or preserving them in
+	// SQS has no recovery path. CloudWatch log is the forensic trail.
 	if event.Game == "" || event.InteractionToken == "" || event.ApplicationID == "" || event.Action == "" {
 		log.Printf("[poll] handleSelfPoll: missing required field(s) in self-poll event: game=%q token_present=%t app_id=%q action=%q",
 			event.Game, event.InteractionToken != "", event.ApplicationID, event.Action)

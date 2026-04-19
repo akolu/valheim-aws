@@ -1697,3 +1697,33 @@ func TestDispatchSelfPoll_Non202Status_ReturnsError(t *testing.T) {
 		t.Errorf("expected error mentioning 202, got: %v", err)
 	}
 }
+
+func TestHandler_SelfPollWithAPIGatewayFields_Rejected(t *testing.T) {
+	// Security Analyst defense-in-depth: a self-poll event that carries API
+	// Gateway wrapping fields (headers, requestContext) cannot have been
+	// produced by our own dispatchSelfPoll — it's a signature-bypass attempt.
+	// Verify the handler rejects with 400.
+	for _, tc := range []struct {
+		name string
+		raw  string
+	}{
+		{"headers present", `{"source":"self-poll","game":"mc","interaction_token":"t","application_id":"a","action":"start","headers":{"x-signature-ed25519":"fake"}}`},
+		{"requestContext present", `{"source":"self-poll","game":"mc","interaction_token":"t","application_id":"a","action":"start","requestContext":{"http":{}}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := handler(context.Background(), json.RawMessage(tc.raw))
+			if err != nil {
+				t.Fatalf("handler returned error: %v", err)
+			}
+			if resp.StatusCode != 400 {
+				t.Errorf("expected 400, got %d — body: %s", resp.StatusCode, resp.Body)
+			}
+			// Crucially, the self-poll code path must NOT have been taken —
+			// the event with a fake signature would otherwise have been
+			// accepted because self-poll skips signature verification.
+			if strings.Contains(resp.Body, "unknown action") || strings.Contains(resp.Body, "missing required field") {
+				t.Errorf("handler reached handleSelfPoll despite API Gateway fields — bypass risk. Body: %s", resp.Body)
+			}
+		})
+	}
+}
