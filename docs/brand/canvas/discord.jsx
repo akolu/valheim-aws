@@ -4,7 +4,7 @@
 // ── State vocabulary ────────────────────────────────────────────────────────
 // Consistent color + copy for every server state the bot can be in.
 const STATES = {
-  running:      { label: 'burning',     color: BF.ember, glow: true,  pulse: false, icon: '●' },
+  running:      { label: 'lit',         color: BF.ember, glow: true,  pulse: false, icon: '●' },
   starting:     { label: 'lighting',    color: BF.spark, glow: true,  pulse: true,  icon: '●' },
   stopping:     { label: 'dying down',  color: BF.ice,   glow: false, pulse: true,  icon: '●' },
   stopped:      { label: 'out',         color: BF.ash,   glow: false, pulse: false, icon: '○' },

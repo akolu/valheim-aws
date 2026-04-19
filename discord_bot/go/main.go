@@ -110,7 +110,8 @@ type SubCommand struct {
 }
 
 type User struct {
-	ID string `json:"id"`
+	ID       string `json:"id"`
+	Username string `json:"username,omitempty"`
 }
 
 type InteractionResponse struct {
@@ -491,7 +492,7 @@ func handleStartCommand(
 	ssmClient SSMAPI,
 	s3Client S3API,
 	lambdaClient LambdaAPI,
-	functionName, userID, gameName, interactionToken string,
+	functionName, userID, userName, gameName, interactionToken string,
 ) InteractionResponse {
 	if !isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
 		return ephemeralEmbedResponse(alertEmbedUnauthorized(
@@ -561,7 +562,7 @@ func handleStartCommand(
 		InteractionToken: interactionToken,
 		ApplicationID:    discordAppID(),
 		Game:             gameName,
-		User:             selfPollUser{ID: userID},
+		User:             selfPollUser{ID: userID, Username: userName},
 		Action:           "start",
 		InstanceID:       info.InstanceID,
 		EnqueuedAt:       time.Now().UTC().Format(time.RFC3339Nano),
@@ -584,7 +585,7 @@ func handleStopCommand(
 	ssmClient SSMAPI,
 	s3Client S3API,
 	lambdaClient LambdaAPI,
-	functionName, userID, gameName, interactionToken string,
+	functionName, userID, userName, gameName, interactionToken string,
 ) InteractionResponse {
 	if !isAuthorizedSSM(ctx, userID, gameName, ssmClient) {
 		return ephemeralEmbedResponse(alertEmbedUnauthorized(
@@ -650,7 +651,7 @@ func handleStopCommand(
 		InteractionToken: interactionToken,
 		ApplicationID:    discordAppID(),
 		Game:             gameName,
-		User:             selfPollUser{ID: userID},
+		User:             selfPollUser{ID: userID, Username: userName},
 		Action:           "stop",
 		InstanceID:       info.InstanceID,
 		EnqueuedAt:       time.Now().UTC().Format(time.RFC3339Nano),
@@ -719,11 +720,13 @@ func handleInteraction(
 		)))
 	}
 
-	userID := ""
+	userID, userName := "", ""
 	if interaction.Member != nil && interaction.Member.User != nil {
 		userID = interaction.Member.User.ID
+		userName = interaction.Member.User.Username
 	} else if interaction.User != nil {
 		userID = interaction.User.ID
+		userName = interaction.User.Username
 	}
 
 	gameName := interaction.Data.Name
@@ -743,9 +746,9 @@ func handleInteraction(
 	case "status":
 		interactionResp = handleStatusCommand(ctx, ec2Client, s3Client, gameName)
 	case "start":
-		interactionResp = handleStartCommand(ctx, ec2Client, ssmClient, s3Client, lambdaClient, functionName, userID, gameName, interaction.Token)
+		interactionResp = handleStartCommand(ctx, ec2Client, ssmClient, s3Client, lambdaClient, functionName, userID, userName, gameName, interaction.Token)
 	case "stop":
-		interactionResp = handleStopCommand(ctx, ec2Client, ssmClient, s3Client, lambdaClient, functionName, userID, gameName, interaction.Token)
+		interactionResp = handleStopCommand(ctx, ec2Client, ssmClient, s3Client, lambdaClient, functionName, userID, userName, gameName, interaction.Token)
 	case "help":
 		interactionResp = handleHelpCommand(gameName)
 	case "hello":
@@ -936,6 +939,7 @@ func handleSelfPoll(ctx context.Context, raw json.RawMessage) (LambdaResponse, e
 		Game:       event.Game,
 		Action:     event.Action,
 		UserID:     event.User.ID,
+		UserName:   event.User.Username,
 		InstanceID: event.InstanceID,
 		AppID:      event.ApplicationID,
 		Token:      event.InteractionToken,

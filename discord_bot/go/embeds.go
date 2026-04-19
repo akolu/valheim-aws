@@ -7,9 +7,9 @@ import (
 )
 
 // Brand palette — hex-encoded as decimal ints for Discord embed.color.
-// Palette spec: brand book §02 (Bonfire Brand Book v1, April 2026).
+// Palette spec: BRAND.md §"Palette" (v1.5).
 const (
-	colorEmber  = 0xe8793a // burning / lit
+	colorEmber  = 0xe8793a // lit
 	colorSpark  = 0xf2c14e // lighting / relighting
 	colorIce    = 0x6b8f9c // cooling / dying down / still lighting
 	colorAsh    = 0x9a8e7d // out / banked coals
@@ -45,10 +45,11 @@ const (
 	copyStopInterruptedBody  = "fire's relighting · someone wasn't done"
 	copyStopDeadlineBody     = "still dying down — i'll keep an eye on it"
 
-	// Hero leadlines / attributions.
-	copyLeadlineLit      = "<@%s> lit the fire"
-	copyLeadlinePutOut   = "put out by <@%s>"
-	copyAttributionLitBy = "lit by <@%s>"
+	// Hero footer text — BRAND.md v1.5 treats attribution as metadata (footer),
+	// not headline. Use with the embed's native timestamp for "lit by @X · just now".
+	// Caller passes a bare "@username" (or fallback) — no format string escapes.
+	copyFooterLitBy    = "lit by %s"
+	copyFooterPutOutBy = "put out by %s"
 
 	// /status Line one-liners — `<Game> · ● <label> · ...` per BRAND.md §"Line".
 	copyStatusRunning         = "%s · ● burning · %s · %s · backup %s ago"
@@ -90,8 +91,11 @@ const (
 	alertSymbolUnauthorized = "◔"
 	alertSymbolNotFound     = "◌"
 
-	// State labels (pill text).
-	labelRunning  = "burning"
+	// State labels (pill text) per BRAND.md §"State vocabulary" v1.5.
+	// `running` is "lit" (rename introduced in BRAND v1.4 per changelog —
+	// "burning" carried ops/incident baggage: "prod is burning"; applied
+	// in code as part of the v1.5 Hero-embed restructure).
+	labelRunning  = "lit"
 	labelPending  = "lighting"
 	labelStopping = "dying down"
 	labelStopped  = "out"
@@ -105,12 +109,17 @@ const (
 
 // Discord embed types — minimal subset needed for webhook PATCH bodies.
 // https://discord.com/developers/docs/resources/channel#embed-object
+//
+// Timestamp (ISO8601) renders natively in Discord as relative time next to
+// the footer ("Footer text · just now" / "· 2m ago" / etc.), per BRAND.md
+// v1.5 Hero-attribution metadata treatment.
 type Embed struct {
 	Title       string       `json:"title,omitempty"`
 	Description string       `json:"description,omitempty"`
 	Color       int          `json:"color,omitempty"`
 	Fields      []EmbedField `json:"fields,omitempty"`
 	Footer      *EmbedFooter `json:"footer,omitempty"`
+	Timestamp   string       `json:"timestamp,omitempty"`
 }
 
 type EmbedField struct {
@@ -169,13 +178,14 @@ func heroTitle(game, state string) string {
 	return fmt.Sprintf("%s · %s", game, stateLabel(state))
 }
 
-// heroEmbed builds a branded Hero embed (public, used for successful /start and /stop edits).
-// leadline is an active-voice headline; attribution is an under-field byline shown on running state.
-// addr / uptime / backup are only rendered when the state is running (or when provided, for flex).
-func heroEmbed(game, state, leadline, body string) Embed {
+// heroEmbed builds a branded Hero embed (public, used for /start and /stop edits).
+// `body` is the description text — typically a narrative line like "lighting
+// the fire… (5s)" or "fire's out". Attribution is NOT part of the description
+// in BRAND.md v1.5; use withFooter to add a footer-line attribution.
+func heroEmbed(game, state, body string) Embed {
 	return Embed{
 		Title:       heroTitle(game, state),
-		Description: composeHeroDescription(leadline, body),
+		Description: body,
 		Color:       stateColor(state),
 	}
 }
@@ -184,46 +194,57 @@ func heroEmbed(game, state, leadline, body string) Embed {
 // the /start soft-deadline Hero (ice color + "lighting" label). Without this
 // escape hatch, we'd paint "dying down" on a still-lighting fire, which is
 // internally contradictory (the body says "still lighting…").
-func heroEmbedWithLabel(game, label string, color int, leadline, body string) Embed {
+func heroEmbedWithLabel(game, label string, color int, body string) Embed {
 	return Embed{
 		Title:       fmt.Sprintf("%s · %s", game, label),
-		Description: composeHeroDescription(leadline, body),
+		Description: body,
 		Color:       color,
 	}
 }
 
 // heroEmbedRunning builds the 3-field running-state Hero: ADDRESS full-width top row,
 // UPTIME + BACKUP side-by-side bottom row (WORLD omitted — see Key Decision #2).
-// backup may be empty — the BACKUP field is then omitted (per BACKUP empty-bucket fallback).
-func heroEmbedRunning(game, leadline, attribution, addr, uptime, backup string) Embed {
+// backup is the raw elapsed string ("15m") — this builder appends " ago" for
+// display, consistent with copy strings that read "backup %s ago". Empty backup
+// omits the field entirely (empty-bucket fallback).
+// No description — attribution lives in the footer (set via withFooter by the caller).
+func heroEmbedRunning(game, addr, uptime, backup string) Embed {
 	fields := []EmbedField{
 		{Name: fieldAddress, Value: "`" + addr + "`", Inline: false},
 		{Name: fieldUptime, Value: uptime, Inline: true},
 	}
 	if backup != "" {
-		fields = append(fields, EmbedField{Name: fieldBackup, Value: backup, Inline: true})
+		fields = append(fields, EmbedField{Name: fieldBackup, Value: backup + " ago", Inline: true})
 	}
 	return Embed{
-		Title:       heroTitle(game, "running"),
-		Description: composeHeroDescription(leadline, attribution),
-		Color:       colorEmber,
-		Fields:      fields,
+		Title:  heroTitle(game, "running"),
+		Color:  colorEmber,
+		Fields: fields,
 	}
 }
 
-// composeHeroDescription renders the two Hero description slots (leadline then byline/body).
-// One blank line between them to match the brand's visual hierarchy.
-func composeHeroDescription(leadline, second string) string {
-	switch {
-	case leadline == "" && second == "":
-		return ""
-	case leadline == "":
-		return second
-	case second == "":
-		return leadline
-	default:
-		return leadline + "\n\n_" + second + "_"
+// withFooter attaches a footer text + timestamp to an embed. Empty footerText
+// leaves the embed unchanged (no footer slot, no timestamp). Discord renders
+// footer text next to relative timestamp ("lit by @X · just now").
+func withFooter(e Embed, footerText string, ts time.Time) Embed {
+	if footerText == "" {
+		return e
 	}
+	e.Footer = &EmbedFooter{Text: footerText}
+	if !ts.IsZero() {
+		e.Timestamp = ts.UTC().Format(time.RFC3339)
+	}
+	return e
+}
+
+// userLabel formats a footer-safe user reference. Discord mention syntax
+// (`<@ID>`) does NOT resolve in footer text — it'd render literally. So we use
+// plain "@username" when available, "someone" as a last-resort fallback.
+func userLabel(username string) string {
+	if username == "" {
+		return "someone"
+	}
+	return "@" + username
 }
 
 // lineEmbed builds a Line (ephemeral) embed: just a colored left bar and a description.
