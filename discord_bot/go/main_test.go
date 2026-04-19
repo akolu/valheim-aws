@@ -698,8 +698,12 @@ func TestHandleInteraction_StatusRunning(t *testing.T) {
 
 	ir := parseInteractionResponse(t, resp)
 	embed := firstEmbed(t, ir)
-	if !strings.Contains(embedBody(embed), labelRunning) {
-		t.Errorf("expected burning label, got: %s", embedBody(embed))
+	// /status Line copy still uses the pre-v1.5 "burning" literal in the
+	// current body shape (`%s · ● burning · ...`). The state-label rename
+	// in v1.5 (burning → lit) applies to Hero embeds; Line-layout copy is
+	// deferred for a separate review pass (user decision 2026-04-19).
+	if !strings.Contains(embedBody(embed), "burning") {
+		t.Errorf("expected 'burning' in /status Line body, got: %s", embedBody(embed))
 	}
 	if !strings.Contains(embedBody(embed), "1.2.3.4") {
 		t.Errorf("expected IP address in status, got: %s", embedBody(embed))
@@ -1208,8 +1212,14 @@ func TestBackupLookup_HappyPath(t *testing.T) {
 	at := time.Now().Add(-15 * time.Minute)
 	mock := &mockS3Client{output: s3OutputWithLastModified(at)}
 	got := backupElapsedString(context.Background(), mock, "valheim", "eu-north-1", "[test] ")
-	if !strings.HasSuffix(got, "ago") {
-		t.Errorf("expected elapsed string with 'ago' suffix, got %q", got)
+	// backupElapsedString returns the RAW elapsed string ("15m") — callers
+	// append " ago" themselves (fixed 2026-04-19 to kill the double-"ago" bug
+	// where copy templates already contained "backup %s ago").
+	if got == "" {
+		t.Fatalf("expected non-empty elapsed string, got empty")
+	}
+	if strings.HasSuffix(got, "ago") {
+		t.Errorf("elapsed string should NOT include 'ago' suffix anymore, got %q", got)
 	}
 }
 
@@ -1442,8 +1452,13 @@ func TestPollStop_ReachesStoppedTerminal(t *testing.T) {
 	if last.Body.Embeds[0].Color != colorAsh {
 		t.Errorf("terminal stopped should be ash, got 0x%x", last.Body.Embeds[0].Color)
 	}
-	if !strings.Contains(last.Body.Embeds[0].Description, "put out by") {
-		t.Errorf("expected 'put out by' leadline, got %q", last.Body.Embeds[0].Description)
+	// BRAND.md v1.5: attribution lives in the footer, not in description.
+	footer := last.Body.Embeds[0].Footer
+	if footer == nil || !strings.Contains(footer.Text, "put out by") {
+		t.Errorf("expected 'put out by' footer, got footer=%+v description=%q", footer, last.Body.Embeds[0].Description)
+	}
+	if last.Body.Embeds[0].Timestamp == "" {
+		t.Error("expected embed Timestamp to be set (Discord renders relative time next to footer)")
 	}
 }
 
@@ -1725,5 +1740,80 @@ func TestHandler_SelfPollWithAPIGatewayFields_Rejected(t *testing.T) {
 				t.Errorf("handler reached handleSelfPoll despite API Gateway fields — bypass risk. Body: %s", resp.Body)
 			}
 		})
+	}
+}
+
+// --- BRAND v1.5: state label + footer attribution + timestamp ---
+
+func TestStateLabel_RunningIsLit_v1_5(t *testing.T) {
+	// v1.5 rename: running state label is "lit" (was "burning" in v1.4).
+	if stateLabel("running") != "lit" {
+		t.Errorf("stateLabel(\"running\") = %q, want %q", stateLabel("running"), "lit")
+	}
+	if labelRunning != "lit" {
+		t.Errorf("labelRunning = %q, want %q", labelRunning, "lit")
+	}
+}
+
+func TestHeroEmbedRunning_HasFooterAndTimestamp_NoDescription(t *testing.T) {
+	// v1.5: attribution lives in the footer next to Discord's relative
+	// timestamp. Description is empty — no bold leadline, no italic byline.
+	cfg := pollConfig{
+		Game:     "factorio",
+		Action:   "start",
+		UserName: "Accu",
+		Region:   "eu-north-1",
+	}
+	got := buildStartTerminal(
+		context.Background(),
+		cfg,
+		instanceInfo{State: "running", PublicIP: "51.20.112.157", LaunchTime: aws.Time(time.Now().Add(-7 * time.Second))},
+		false,
+	)
+	if got.Title != "factorio · lit" {
+		t.Errorf("title: want %q, got %q", "factorio · lit", got.Title)
+	}
+	if got.Description != "" {
+		t.Errorf("description should be empty in v1.5 Hero, got %q", got.Description)
+	}
+	if got.Footer == nil || !strings.Contains(got.Footer.Text, "lit by @Accu") {
+		t.Errorf("expected 'lit by @Accu' in footer, got %+v", got.Footer)
+	}
+	if got.Timestamp == "" {
+		t.Error("expected non-empty Timestamp so Discord renders relative time")
+	}
+	// ADDRESS, UPTIME fields present; no leadline/attribution slots.
+	if len(got.Fields) < 2 {
+		t.Errorf("expected at least ADDRESS + UPTIME fields, got %d: %+v", len(got.Fields), got.Fields)
+	}
+}
+
+func TestUserLabel_FallbackOnEmpty(t *testing.T) {
+	// Empty username falls back to "someone" — Discord mention syntax
+	// `<@ID>` doesn't resolve in footer text, so using the raw ID would
+	// render literally and read ugly. "someone" is the brand-safe fallback.
+	if userLabel("") != "someone" {
+		t.Errorf("userLabel(\"\") = %q, want %q", userLabel(""), "someone")
+	}
+	if userLabel("otso") != "@otso" {
+		t.Errorf("userLabel(\"otso\") = %q, want %q", userLabel("otso"), "@otso")
+	}
+}
+
+func TestBackupElapsedString_NoDoubleAgo(t *testing.T) {
+	// Regression test for the "ago ago" bug — the helper returns the raw
+	// elapsed string. Double-"ago" happened when the copy template had
+	// "backup %s ago" AND the helper also appended " ago".
+	at := time.Now().Add(-10*time.Hour - 45*time.Minute)
+	mock := &mockS3Client{output: s3OutputWithLastModified(at)}
+	got := backupElapsedString(context.Background(), mock, "valheim", "eu-north-1", "[test] ")
+	if strings.Contains(got, "ago") {
+		t.Errorf("helper output should not contain 'ago' anymore, got %q", got)
+	}
+	// And the /start-already-burning idempotency Line (once formatted with this helper's output)
+	// should read "backup 10h 45m ago" — not "backup 10h 45m ago ago".
+	composed := fmt.Sprintf(copyStartAlreadyRunningWithBackup, "30s", "1.2.3.4", got)
+	if strings.Contains(composed, "ago ago") {
+		t.Errorf("composed Line body contains 'ago ago' — the double-ago bug is back: %q", composed)
 	}
 }

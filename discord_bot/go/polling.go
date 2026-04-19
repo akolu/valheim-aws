@@ -82,10 +82,12 @@ func latestBackupTime(ctx context.Context, client S3API, game, region string) (*
 	return newest, nil
 }
 
-// backupElapsedString returns either an elapsed string ("15m ago") or empty when
-// the bucket is empty / lookup errors. Callers that distinguish "empty" from
-// "error" should use latestBackupTime directly. logTag is the caller's path
-// prefix ("[ack] " or "[poll] ") — `backupElapsedString` is used from both.
+// backupElapsedString returns the raw elapsed duration string ("15m") for the
+// most recent backup, or empty when the bucket is empty / lookup errors.
+// Callers append " ago" themselves — keeping this helper free of that suffix
+// avoids the double-"ago" bug seen when the copy string already reads
+// "backup %s ago" (fixed 2026-04-19). logTag is the caller's path prefix
+// ("[ack] " or "[poll] ") — `backupElapsedString` is used from both.
 func backupElapsedString(ctx context.Context, client S3API, game, region, logTag string) string {
 	t, err := latestBackupTime(ctx, client, game, region)
 	if err != nil {
@@ -95,7 +97,7 @@ func backupElapsedString(ctx context.Context, client S3API, game, region, logTag
 	if t == nil {
 		return ""
 	}
-	return formatElapsed(time.Since(*t)) + " ago"
+	return formatElapsed(time.Since(*t))
 }
 
 // --- Discord webhook PATCH client ---
@@ -167,7 +169,8 @@ func patchOriginalMessage(ctx context.Context, client httpDoer, appID, token str
 type pollConfig struct {
 	Game         string
 	Action       string // "start" or "stop"
-	UserID       string // Discord user ID — used for leadline/attribution
+	UserID       string // Discord user snowflake — preserved for audit, not shown in footer (mention syntax `<@ID>` doesn't resolve in footer text)
+	UserName     string // Discord username — rendered in footer as "@<name>" per BRAND.md v1.5
 	InstanceID   string
 	AppID        string
 	Token        string
@@ -412,18 +415,28 @@ var (
 )
 
 // --- In-flight / terminal embed builders ---
+//
+// BRAND.md v1.5 treats user attribution as metadata, not headline — so it
+// lives in the embed footer alongside the native timestamp ("lit by @X · just
+// now"), not in the embed description. Interrupted and deadline Heroes skip
+// the footer: those outcomes aren't "caused by @user" in a clean enough way
+// to attribute; they're state-of-the-world updates.
 
 func buildStartInFlight(cfg pollConfig, elapsed time.Duration, _ string) Embed {
 	body := fmt.Sprintf(copyLightingBody, formatElapsed(elapsed))
-	return heroEmbed(cfg.Game, "pending", fmt.Sprintf(copyLeadlineLit, cfg.UserID), body)
+	return withFooter(
+		heroEmbed(cfg.Game, "pending", body),
+		fmt.Sprintf(copyFooterLitBy, userLabel(cfg.UserName)),
+		time.Now(),
+	)
 }
 
 func buildStartTerminal(ctx context.Context, cfg pollConfig, info instanceInfo, deadline bool) Embed {
 	if deadline {
 		// Soft deadline during /start: ice color + "lighting" label so title
 		// matches the "still lighting…" body. Using state="stopping" would
-		// paint ice but show "dying down" — internally contradictory (UX I5).
-		return heroEmbedWithLabel(cfg.Game, labelPending, colorIce, "", copyStartDeadlineBody)
+		// paint ice but show "dying down" — internally contradictory.
+		return heroEmbedWithLabel(cfg.Game, labelPending, colorIce, copyStartDeadlineBody)
 	}
 	switch info.State {
 	case "running":
@@ -433,14 +446,13 @@ func buildStartTerminal(ctx context.Context, cfg pollConfig, info instanceInfo, 
 		}
 		uptime := formatElapsed(elapsedSince(info.LaunchTime))
 		backup := lookupBackup(ctx, cfg)
-		return heroEmbedRunning(
-			cfg.Game,
-			fmt.Sprintf(copyLeadlineLit, cfg.UserID),
-			fmt.Sprintf(copyAttributionLitBy, cfg.UserID),
-			addr, uptime, backup,
+		return withFooter(
+			heroEmbedRunning(cfg.Game, addr, uptime, backup),
+			fmt.Sprintf(copyFooterLitBy, userLabel(cfg.UserName)),
+			time.Now(),
 		)
 	case "stopping", "stopped":
-		return heroEmbed(cfg.Game, "stopped", "", copyStartInterruptedBody)
+		return heroEmbed(cfg.Game, "stopped", copyStartInterruptedBody)
 	case "not_found":
 		// Instance vanished mid-poll — tag was removed or instance terminated.
 		return alertEmbed(copyAlertNoSuchFire, "the fire's gone — did someone retire the game?", fmt.Sprintf(copyHintTryStatusFmt, cfg.Game))
@@ -448,30 +460,38 @@ func buildStartTerminal(ctx context.Context, cfg pollConfig, info instanceInfo, 
 		return alertEmbed(copyAlertTwoFires, "i found more than one — that shouldn't happen", copyHintTagCollision)
 	}
 	// Unknown terminal — fall back to ash.
-	return heroEmbed(cfg.Game, "stopped", "", copyStartInterruptedBody)
+	return heroEmbed(cfg.Game, "stopped", copyStartInterruptedBody)
 }
 
 func buildStopInFlight(cfg pollConfig, _ time.Duration, _ string) Embed {
-	return heroEmbed(cfg.Game, "stopping", "", copyStoppingBody)
+	return withFooter(
+		heroEmbed(cfg.Game, "stopping", copyStoppingBody),
+		fmt.Sprintf(copyFooterPutOutBy, userLabel(cfg.UserName)),
+		time.Now(),
+	)
 }
 
 func buildStopTerminal(_ context.Context, cfg pollConfig, info instanceInfo, deadline bool) Embed {
 	if deadline {
 		// /stop soft-deadline: state="stopping" already produces ice + "dying
 		// down" consistently with the "still dying down" body — no override needed.
-		return heroEmbed(cfg.Game, "stopping", "", copyStopDeadlineBody)
+		return heroEmbed(cfg.Game, "stopping", copyStopDeadlineBody)
 	}
 	switch info.State {
 	case "stopped":
-		return heroEmbed(cfg.Game, "stopped", fmt.Sprintf(copyLeadlinePutOut, cfg.UserID), "")
+		return withFooter(
+			heroEmbed(cfg.Game, "stopped", ""),
+			fmt.Sprintf(copyFooterPutOutBy, userLabel(cfg.UserName)),
+			time.Now(),
+		)
 	case "pending", "running":
-		return heroEmbed(cfg.Game, "pending", "", copyStopInterruptedBody)
+		return heroEmbed(cfg.Game, "pending", copyStopInterruptedBody)
 	case "not_found":
 		return alertEmbed(copyAlertNoSuchFire, "the fire's gone mid-bank — did someone retire the game?", fmt.Sprintf(copyHintTryStatusFmt, cfg.Game))
 	case "multiple":
 		return alertEmbed(copyAlertTwoFires, "i found more than one — that shouldn't happen", copyHintTagCollision)
 	}
-	return heroEmbed(cfg.Game, "stopped", "", copyStopInterruptedBody)
+	return heroEmbed(cfg.Game, "stopped", copyStopInterruptedBody)
 }
 
 // lookupBackup swallows errors and returns "" on empty-bucket / failure.
