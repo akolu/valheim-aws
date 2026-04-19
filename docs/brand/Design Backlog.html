@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Bonfire — Design Backlog</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;1,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --ink: #0f0c09;
+    --paper: #f0e7d6;
+    --ember: #e8793a;
+    --ash: #6b6158;
+    --dim: #4a4339;
+    --muted: #a89f93;
+    --serif: 'Cormorant Garamond', serif;
+    --sans: 'Inter Tight', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+  html, body { margin: 0; padding: 0; background: var(--ink); color: var(--paper); font-family: var(--sans); }
+  main { max-width: 780px; margin: 0 auto; padding: 96px 48px 160px; }
+  .kicker { font-family: var(--mono); font-size: 11px; color: var(--ember); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 24px; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: 72px; line-height: 1.05; letter-spacing: -0.02em; margin: 0 0 8px; }
+  h1 em { font-style: italic; }
+  .sub { font-family: var(--serif); font-style: italic; font-size: 24px; color: var(--muted); margin: 0 0 72px; }
+  .intro { font-size: 17px; line-height: 1.7; color: var(--paper); max-width: 640px; margin-bottom: 72px; }
+  .intro p { margin: 0 0 18px; }
+
+  .item { border-top: 1px solid rgba(240,231,214,0.08); padding: 36px 0; display: grid; grid-template-columns: 48px 1fr; gap: 24px; align-items: start; }
+  .item:last-of-type { border-bottom: 1px solid rgba(240,231,214,0.08); }
+  .num { font-family: var(--mono); font-size: 13px; color: var(--ash); padding-top: 8px; }
+  .body h2 { font-family: var(--serif); font-weight: 500; font-size: 30px; line-height: 1.15; margin: 0 0 10px; }
+  .body .why { font-family: var(--serif); font-style: italic; font-size: 17px; color: var(--muted); margin: 0 0 18px; }
+  .body p { font-size: 15px; line-height: 1.65; color: #d9cdb8; margin: 0 0 12px; }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 3px 8px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+  .tag.design { background: rgba(232,121,58,0.15); color: var(--ember); }
+  .tag.backend { background: rgba(107,97,88,0.25); color: #c2b8a8; }
+  .tag.quick { background: rgba(200,200,130,0.12); color: #c8c882; }
+  .tag.deep { background: rgba(180,130,200,0.12); color: #c89cd2; }
+
+  .closing { margin-top: 96px; padding-top: 48px; border-top: 1px solid rgba(240,231,214,0.08); font-family: var(--serif); font-style: italic; font-size: 19px; color: var(--muted); line-height: 1.6; }
+
+  .foot { margin-top: 72px; font-family: var(--mono); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <div class="kicker">bonfire · design backlog</div>
+  <h1>what's <em>parked</em></h1>
+  <div class="sub">design work we didn't finish — documented for future you</div>
+
+  <div class="intro">
+    <p>The brand and the bot-surface sketches are done. What's below was intentionally deferred — you said "keen to build it already," which is the right call for a hobby project. But these are real open design questions, not loose ends, and they'll want answering when you start coding the bot.</p>
+    <p>Each item has a tag: <span class="tag design">DESIGN</span> = needs me (or you with the brand book); <span class="tag backend">BACKEND</span> = needs code before design makes sense; <span class="tag quick">QUICK</span> = under an hour; <span class="tag deep">DEEP</span> = real work.</p>
+  </div>
+
+  <div class="item">
+    <div class="num">01</div>
+    <div class="body">
+      <h2>Hero layout, finalized <span class="tag design">DESIGN</span><span class="tag deep">DEEP</span></h2>
+      <div class="why">The one we have is a round-one sketch. Not to spec.</div>
+      <p>Pin dimensions, type scale, and spacing. Recompose using the canonical palette and avatar from the brand book — the sketch used pre-lock values. Write the real copy for every state (<em>bonfire lit</em>, <em>lighting the fire…</em>, <em>fire's going out</em>, <em>bonfire's out</em>) using the voice and vocabulary from the brand book, not the placeholders.</p>
+      <p>Include the invoker attribution line ("lit by @otso") and a consistent footer block.</p>
+    </div>
+  </div>
+
+  <div class="item">
+    <div class="num">02</div>
+    <div class="body">
+      <h2>Line layout, finalized <span class="tag design">DESIGN</span><span class="tag quick">QUICK</span></h2>
+      <div class="why">Status is personal + ephemeral + low-key. The sketch half-gets there.</div>
+      <p>Decide: does Line use an embed color strip, a plain message, or rich text with one emoji? What's the minimum that still feels like Bonfire? This is probably the most-used surface — <code>/valheim status</code> runs a hundred times for every <code>/valheim start</code>. Worth getting small and right.</p>
+    </div>
+  </div>
+
+  <div class="item">
+    <div class="num">03</div>
+    <div class="body">
+      <h2>Alert / Card layout <span class="tag design">DESIGN</span><span class="tag quick">QUICK</span></h2>
+      <div class="why">Errors should feel like Bonfire too, not like default Discord.</div>
+      <p>Unauthorized, not_found, multiple_instances, AWS-unreachable. Each gets an embed with the right tone (warm apologetic for unauthorized; matter-of-fact for not_found; slightly embarrassed for multiple). Pull copy patterns from the brand book's "words we use / words we don't" section.</p>
+    </div>
+  </div>
+
+  <div class="item">
+    <div class="num">04</div>
+    <div class="body">
+      <h2>The state matrix <span class="tag design">DESIGN</span><span class="tag quick">QUICK</span></h2>
+      <div class="why">Which layout gets used when — a single canonical table.</div>
+      <p>Rows: every EC2 state × every command. Cells: which layout, which copy, ephemeral or public, edit-in-place or one-shot. This is the spec your bot implementation reads from. Small artifact, high leverage.</p>
+    </div>
+  </div>
+
+  <div class="item">
+    <div class="num">05</div>
+    <div class="body">
+      <h2>Cold-start edit sequence <span class="tag design">DESIGN</span><span class="tag backend">BACKEND</span><span class="tag deep">DEEP</span></h2>
+      <div class="why">The 90-second wait is the hardest UX moment in the whole bot.</div>
+      <p>Storyboard the sequence of edits to a single Hero message as the server boots: t=0 "lighting the fire…" → t=30s "still lighting… (0:30)" → t=90s "🔥 bonfire lit · &lt;ip&gt;". Nail the cadence, the copy per tick, and what happens if it fails past 3 minutes.</p>
+      <p>This requires backend changes (deferred response + follow-up edits via <code>PATCH /webhooks/…</code> with a poll loop somewhere — Lambda won't want to block for 90s). Design and backend are entangled; worth doing together.</p>
+    </div>
+  </div>
+
+  <div class="item">
+    <div class="num">06</div>
+    <div class="body">
+      <h2>Stop confirmation + input polish <span class="tag design">DESIGN</span><span class="tag backend">BACKEND</span><span class="tag quick">QUICK</span></h2>
+      <div class="why">Stopping is destructive; make it a one-tap "are you sure" with a button.</div>
+      <p>Design the confirm prompt (embed + two buttons: "put it out" / "nevermind"), including timeout-revert behavior. Also: command autocomplete hints — what does Discord show when a user types <code>/valheim </code>? Both worth ~30 min of design and maybe an hour of Go to wire up.</p>
+    </div>
+  </div>
+
+  <div class="closing">
+    Nothing here is urgent. Start building — the brand book plus the sketched surfaces are enough for a first pass. When you hit a real question ("what does the message say while it's booting?"), come back here and pick the matching item. That's when the design work will be easy, because you'll know exactly what you need.
+  </div>
+
+  <div class="foot">bonfire · parked but not lost · v1 · april 2026</div>
+</main>
+</body>
+</html>
