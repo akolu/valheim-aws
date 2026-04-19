@@ -28,14 +28,18 @@ const (
 const (
 	// Idempotent Line copy (type 4, flags 64) — see plan § Idempotency.
 	// Each includes the `● <label>` state-pill dot per brand Line format.
-	copyStartAlreadyRunning    = "fire's already ● burning · lit %s ago · %s"
-	copyStartAlreadyRunningWithBackup = "fire's already ● burning · lit %s ago · %s · backup %s ago"
-	copyStartAlreadyLighting   = "fire's already ● lighting · started %s ago · ~2 min total"
-	copyStartWhileStopping     = "hang on — someone's ● banking the coals · try again in a minute"
-	copyStopAlreadyOut         = "fire's already ● out · last burned %s ago"
-	copyStopAlreadyOutNever    = "fire's already ● out · never burned"
-	copyStopAlreadyDyingDown   = "fire's already ● dying down · saving the world"
-	copyStopWhilePending       = "can't bank coals yet · fire's still ● lighting · try again in a minute"
+	// Running-state shape follows BRAND.md v1.5 Line spec:
+	//   `<wrapper> · ● lit · <addr> · <uptime> · backup <X> ago`
+	// (no "lit X ago" clause — uptime is bare, per brand v1.5 Line example).
+	// Param order: addr, uptime (+ backup).
+	copyStartAlreadyRunning           = "fire's already ● lit · %s · %s"                     // addr, uptime
+	copyStartAlreadyRunningWithBackup = "fire's already ● lit · %s · %s · backup %s ago"     // addr, uptime, backup
+	copyStartAlreadyLighting          = "fire's already ● lighting · lit %s ago · ~2 min total" // elapsed — "lit X ago" per v1.5 starting-state copy shape
+	copyStartWhileStopping            = "hang on — someone's ● banking the coals · try again in a minute"
+	copyStopAlreadyOut                = "fire's already ● out · last burned %s ago"
+	copyStopAlreadyOutNever           = "fire's already ● out · never burned"
+	copyStopAlreadyDyingDown          = "fire's already ● dying down · saving the world"
+	copyStopWhilePending              = "can't bank coals yet · fire's still ● lighting · try again in a minute"
 
 	// Polling in-flight / terminal Hero bodies.
 	copyLightingBody         = "lighting the fire… (%s)"
@@ -51,10 +55,12 @@ const (
 	copyFooterLitBy    = "lit by %s"
 	copyFooterPutOutBy = "put out by %s"
 
-	// /status Line one-liners — `<Game> · ● <label> · ...` per BRAND.md §"Line".
-	copyStatusRunning         = "%s · ● burning · %s · %s · backup %s ago"
-	copyStatusRunningNoBackup = "%s · ● burning · %s · %s · never burned"
-	copyStatusPending         = "%s · ● lighting · started %s ago · ~2 min total"
+	// /status Line one-liners — `<Game> · ● <label> · ...` per BRAND.md v1.5 §"Line".
+	// Running: `<Game> · ● lit · <addr> · <uptime> · backup <X> ago`.
+	// Pending: `<Game> · ● lighting · lit <X> ago · ~2 min total` (v1.5 "lit X ago" idiom).
+	copyStatusRunning         = "%s · ● lit · %s · %s · backup %s ago"          // game, addr, uptime, backup
+	copyStatusRunningNoBackup = "%s · ● lit · %s · %s · never burned"           // game, addr, uptime
+	copyStatusPending         = "%s · ● lighting · lit %s ago · ~2 min total"   // game, elapsed
 	copyStatusStopping        = "%s · ● dying down · saving the world"
 	copyStatusStopped         = "%s · ● out · last burned %s ago"
 	copyStatusStoppedNever    = "%s · ● out · never burned"

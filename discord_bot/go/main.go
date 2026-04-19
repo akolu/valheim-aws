@@ -529,17 +529,17 @@ func handleStartCommand(
 	// Idempotency: state ∈ {running, pending, stopping} → ephemeral Line, no start, no self-invoke.
 	switch info.State {
 	case "running":
-		elapsed := formatElapsed(elapsedSince(info.LaunchTime))
-		// Include backup trailer when we have one — the running Line format is
-		// `... lit X ago · addr · backup Y ago` per BRAND.md §"Line".
+		uptime := formatElapsed(elapsedSince(info.LaunchTime))
+		// Include backup trailer when we have one — v1.5 Line format is
+		// `<wrapper> · ● lit · <addr> · <uptime> · backup <X> ago`.
 		backup := ""
 		if s3Client != nil {
 			backup = backupElapsedString(ctx, s3Client, gameName, awsRegion(), "[ack] ")
 		}
 		if backup != "" {
-			return ephemeralEmbedResponse(lineEmbed("running", fmt.Sprintf(copyStartAlreadyRunningWithBackup, elapsed, info.PublicIP, backup)))
+			return ephemeralEmbedResponse(lineEmbed("running", fmt.Sprintf(copyStartAlreadyRunningWithBackup, info.PublicIP, uptime, backup)))
 		}
-		return ephemeralEmbedResponse(lineEmbed("running", fmt.Sprintf(copyStartAlreadyRunning, elapsed, info.PublicIP)))
+		return ephemeralEmbedResponse(lineEmbed("running", fmt.Sprintf(copyStartAlreadyRunning, info.PublicIP, uptime)))
 	case "pending":
 		elapsed := formatElapsed(elapsedSince(info.LaunchTime))
 		return ephemeralEmbedResponse(lineEmbed("pending", fmt.Sprintf(copyStartAlreadyLighting, elapsed)))
