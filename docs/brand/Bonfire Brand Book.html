@@ -112,7 +112,7 @@
             </Prose>
             <DoDont
               doItems={[
-                <span>Metaphor first: <em>"burning," "lighting," "out," "lit by @otso"</em></span>,
+                <span>Metaphor first: <em>"lit," "lighting," "out," "lit by @otso"</em></span>,
                 <span>Lowercase body copy. First-person bot ("i'll")</span>,
                 <span>Admit latency plainly: <em>"usually takes ~2 min"</em></span>,
                 <span>Honest about what went wrong; propose next step</span>,
@@ -272,7 +272,7 @@
         { name: 'paper', value: BF.paper, usage: 'warm off-white bg' },
       ];
       const states = [
-        { name: 'ember', value: BF.ember, usage: 'RUNNING · brand primary', role: 'burning' },
+        { name: 'ember', value: BF.ember, usage: 'RUNNING · brand primary', role: 'lit' },
         { name: 'emberHot', value: BF.emberHot, usage: 'running glow · highlight', role: '—' },
         { name: 'spark', value: BF.spark, usage: 'STARTING · kindling', role: 'lighting' },
         { name: 'ice', value: BF.ice, usage: 'STOPPING · cooling', role: 'dying down' },
@@ -371,7 +371,7 @@
                 <div style={{ fontFamily: BF.fontMono, fontSize: 10, color: BF.dim, letterSpacing: 1 }}>400 · 500 · 600 · 11–22px</div>
               </div>
               <div style={{ fontFamily: BF.fontBody, fontSize: 22, fontWeight: 600, color: BF.cream, marginBottom: 6 }}>
-                burning for 1h 42m · lit by @otso
+                lit for 1h 42m · by @otso
               </div>
               <div style={{ fontFamily: BF.fontBody, fontSize: 15, color: BF.cream, opacity: 0.8, maxWidth: 520, lineHeight: 1.55 }}>
                 Body copy, status lines, labels. Inter Tight is slightly narrower than stock Inter — better for the dense, data-rich embeds we build.
@@ -442,7 +442,7 @@
     // ── 06 · States ───────────────────────────────────────────────────────
     function SectionStates() {
       const rows = [
-        { state: 'running',      label: 'burning',      color: BF.ember,  copy: '"burning for 1h 42m · lit by @otso"',             vibe: 'present, warm, alive' },
+        { state: 'running',      label: 'lit',          color: BF.ember,  copy: '"lit for 1h 42m · by @otso"',                     vibe: 'present, warm, alive' },
         { state: 'starting',     label: 'lighting',     color: BF.spark,  copy: '"tending to it · lit 34s ago · usually ~2 min"',  vibe: 'ongoing, patient' },
         { state: 'stopping',     label: 'dying down',   color: BF.ice,    copy: '"saving the world, banking the coals"',           vibe: 'winding down' },
         { state: 'stopped',      label: 'out',          color: BF.ash,    copy: '"last burned 2h ago"',                            vibe: 'quiet, cold, neutral' },
@@ -520,7 +520,7 @@
               {[
                 ['start',      'light the fire · light · kindle',        'provision · spin up · boot'],
                 ['stop',       'put it out · bank · let it go out',      'terminate · kill · shut down'],
-                ['running',    'burning · the fire is on',               'UP · ONLINE · active'],
+                ['running',    'lit · going · the fire is lit',           'burning · UP · ONLINE · active'],
                 ['starting',   'lighting · tending · coaxing',           'BOOTING · INITIALIZING'],
                 ['stopped',    'out · dark · cold',                      'OFFLINE · DOWN · dead'],
                 ['latency',    'takes a minute · patience',              'please wait · loading...'],
@@ -704,7 +704,7 @@ tip: anyone in the channel can start or stop — it's a shared fire.`}
             fontFamily: BF.fontMono, fontSize: 10, color: BF.dim,
             letterSpacing: 2, textTransform: 'uppercase', marginTop: 24,
           }}>
-            v1.3 · april 2026 · one source of truth
+            v1.5 · april 2026 · one source of truth
           </div>
         </section>
       );

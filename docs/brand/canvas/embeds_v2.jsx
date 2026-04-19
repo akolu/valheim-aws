@@ -137,7 +137,7 @@ function CardEmbed({ game = 'Valheim', state = 'running', uptime = '1h 42m', add
         {state === 'running' && (
           <>
             <div style={{ fontFamily: BF.fontBody, fontSize: 13, color: BF.muted, marginBottom: 14 }}>
-              burning for {uptime} · lit by {invoker}
+              lit for {uptime} · by {invoker}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', rowGap: 8, columnGap: 14, fontSize: 13 }}>
               <div style={{ color: BF.dim, fontFamily: BF.fontMono, fontSize: 11, letterSpacing: 0.5 }}>ADDRESS</div>
