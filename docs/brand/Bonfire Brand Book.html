@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bonfire — Brand Book</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #0f0c09; color: #f0e7d6; scroll-behavior: smooth; }
+    body { font-family: "Inter Tight", sans-serif; }
+    @keyframes bfPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }
+    @keyframes bfBlink { 50% { opacity: 0; } }
+    .anchor { scroll-margin-top: 60px; }
+    a { color: #e8793a; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    em { font-family: "Cormorant Garamond", serif; font-style: italic; font-weight: 500; font-size: 1.06em; }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="canvas/tokens.jsx"></script>
+  <script type="text/babel" src="canvas/avatars.jsx"></script>
+  <script type="text/babel" src="canvas/discord.jsx?v=2"></script>
+  <script type="text/babel" src="canvas/embeds_v2.jsx?v=2"></script>
+  <script type="text/babel" src="canvas/book.jsx"></script>
+
+  <script type="text/babel">
+    // ── Cover ─────────────────────────────────────────────────────────────
+    function Cover() {
+      return (
+        <section style={{
+          minHeight: '100vh', padding: '80px 72px', position: 'relative',
+          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+          background: `radial-gradient(ellipse at 80% 20%, rgba(232,121,58,0.12) 0%, transparent 50%), ${BF.ink}`,
+          overflow: 'hidden',
+        }}>
+          {/* Top: meta */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Av_CampfireInk size={32}/>
+              <div style={{
+                fontFamily: BF.fontMono, fontSize: 11, letterSpacing: 3,
+                color: BF.ember, textTransform: 'uppercase',
+              }}>Bonfire · Brand Book v1</div>
+            </div>
+            <div style={{
+              fontFamily: BF.fontMono, fontSize: 10, color: BF.dim,
+              letterSpacing: 2, textTransform: 'uppercase',
+            }}>internal · one source of truth</div>
+          </div>
+
+          {/* Middle: wordmark at hero scale */}
+          <div>
+            <div style={{
+              fontFamily: BF.fontDisplay, fontSize: 200, fontWeight: 500,
+              fontStyle: 'italic', color: BF.cream, letterSpacing: -6,
+              lineHeight: 0.9, marginBottom: 30,
+            }}>
+              bon<span style={{
+                display: 'inline-block', width: 20, height: 20, borderRadius: '50%',
+                background: BF.ember, verticalAlign: 'middle', margin: '0 18px 28px',
+                boxShadow: `0 0 32px ${BF.ember}`,
+              }}/>fire
+            </div>
+            <div style={{
+              fontFamily: BF.fontDisplay, fontSize: 30, fontStyle: 'italic',
+              color: BF.muted, letterSpacing: -0.5, maxWidth: 780, lineHeight: 1.2,
+            }}>
+              A small, warm system for lighting game servers on cue.
+            </div>
+          </div>
+
+          {/* Bottom: index */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 24,
+            paddingTop: 40, borderTop: `1px solid ${BF.border}`,
+            fontFamily: BF.fontBody, fontSize: 13,
+          }}>
+            {[
+              ['01', 'Voice', '#voice'],
+              ['02', 'Wordmark', '#wordmark'],
+              ['03', 'Avatar', '#avatar'],
+              ['04', 'Palette', '#palette'],
+              ['05', 'Type', '#type'],
+              ['06', 'States', '#states'],
+              ['07', 'Copy', '#copy'],
+              ['08', 'In context', '#context'],
+            ].map(([n, t, href]) => (
+              <a key={n} href={href} style={{ display: 'flex', gap: 8, color: BF.cream, opacity: 0.7 }}>
+                <span style={{ fontFamily: BF.fontMono, color: BF.ember, fontSize: 10, letterSpacing: 1 }}>{n}</span>
+                <span>{t}</span>
+              </a>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    // ── 01 · Voice ─────────────────────────────────────────────────────────
+    function SectionVoice() {
+      return (
+        <div id="voice" className="anchor">
+          <BookSection kicker="01 · Voice" title={<>warm, low-key, <br/>slightly personified</>}>
+            <Prose>
+              Bonfire isn't a service. It's a <em>keeper</em> — quietly tending a fire that lights when your friends arrive and goes out when they leave. The tone is warm, patient, a little dry. It talks about fires, not "instances." It takes time because tending takes time.
+            </Prose>
+            <Prose>
+              Voice is lowercase by default, first-person when appropriate ("i'll let you know when it's ready"), never corporate, never apologetic. If something goes wrong, it's a trouble, not an <em>Error</em>. If it's starting, it's <em>lighting</em>. If it's out, it's <em>out</em>.
+            </Prose>
+            <DoDont
+              doItems={[
+                <span>Metaphor first: <em>"burning," "lighting," "out," "lit by @otso"</em></span>,
+                <span>Lowercase body copy. First-person bot ("i'll")</span>,
+                <span>Admit latency plainly: <em>"usually takes ~2 min"</em></span>,
+                <span>Honest about what went wrong; propose next step</span>,
+              ]}
+              dontItems={[
+                <span>Uppercase shouting: <em>"ERROR"</em>, <em>"WARNING"</em></span>,
+                <span>Corporate idioms: "we," "provisioned," "spun up"</span>,
+                <span>Fake progress messaging ("terraform apply...")</span>,
+                <span>Emojis as decoration. One, rarely, as voice: 🙂</span>,
+              ]}
+            />
+          </BookSection>
+        </div>
+      );
+    }
+
+    // ── 02 · Wordmark ──────────────────────────────────────────────────────
+    function SectionWordmark() {
+      return (
+        <div id="wordmark" className="anchor">
+          <BookSection kicker="02 · Wordmark" title="bon · fire">
+            <Prose>
+              The wordmark is lowercase italic <em>Cormorant Garamond</em> with a single ember-orange dot between the syllables. The dot <em>is</em> the brand — a glowing coal held between two halves of a word. It replaces the <em>n</em>-to-<em>f</em> visual space.
+            </Prose>
+
+            {/* Large spec */}
+            <div style={{
+              background: BF.ink, border: `1px solid ${BF.border}`,
+              padding: '70px 60px', borderRadius: 4, marginTop: 24, marginBottom: 28,
+              display: 'grid', placeItems: 'center',
+            }}>
+              <div style={{
+                fontFamily: BF.fontDisplay, fontSize: 140, fontWeight: 500,
+                fontStyle: 'italic', color: BF.cream, letterSpacing: -4, lineHeight: 1,
+              }}>
+                bon<span style={{
+                  display: 'inline-block', width: 14, height: 14, borderRadius: '50%',
+                  background: BF.ember, verticalAlign: 'middle', margin: '0 14px 18px',
+                  boxShadow: `0 0 20px ${BF.ember}`,
+                }}/>fire
+              </div>
+            </div>
+
+            {/* Scale specimen */}
+            <FieldLabel>At scale</FieldLabel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 28, marginBottom: 28 }}>
+              {[64, 40, 24, 16].map(size => (
+                <div key={size} style={{ display: 'flex', alignItems: 'baseline', gap: 40 }}>
+                  <div style={{
+                    fontFamily: BF.fontMono, fontSize: 10, color: BF.dim,
+                    width: 64, letterSpacing: 1,
+                  }}>{size}px</div>
+                  <div style={{
+                    fontFamily: BF.fontDisplay, fontSize: size, fontWeight: 500,
+                    fontStyle: 'italic', color: BF.cream,
+                    letterSpacing: size > 48 ? -1.5 : -0.6, lineHeight: 1,
+                    whiteSpace: 'nowrap',
+                  }}>
+                    bon<span style={{
+                      display: 'inline-block',
+                      width: Math.max(4, size * 0.1),
+                      height: Math.max(4, size * 0.1),
+                      borderRadius: '50%', background: BF.ember,
+                      verticalAlign: 'middle',
+                      margin: `0 ${Math.max(3, size * 0.08)}px ${size * 0.12}px`,
+                      boxShadow: size > 24 ? `0 0 ${size * 0.2}px ${BF.ember}` : 'none',
+                    }}/>fire
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <DoDont
+              doItems={[
+                'Lowercase, italic Cormorant Garamond, weight 500',
+                'Ember-orange dot, proportional to cap-height (~10% of font-size)',
+                'Glow on the dot scales with wordmark size; omit below 24px',
+                'Negative letter-spacing: ~-1.5 at 64px+, ~-0.6 at 24px',
+              ]}
+              dontItems={[
+                'Uppercase, uprights, or any weight other than 500',
+                'Replacing the dot with a flame, ember, or icon',
+                'Breaking across lines: always "bon ● fire" on one baseline',
+                'Tinting the wordmark (always cream on dark, ink on light)',
+              ]}
+            />
+          </BookSection>
+        </div>
+      );
+    }
+
+    // ── 03 · Avatar ────────────────────────────────────────────────────────
+    function SectionAvatar() {
+      return (
+        <div id="avatar" className="anchor">
+          <BookSection kicker="03 · Avatar" title={<>a system of <br/>three states</>}>
+            <Prose>
+              The Bonfire avatar is a system, not a logo. Three marks cover the three moments a user meets the bot: tending, quiet, or dormant. The primary — <em>Campfire</em> — is what Discord shows in the members list. The other two are for specific contexts.
+            </Prose>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, marginTop: 32, maxWidth: 900 }}>
+              {[
+                { name: 'Campfire', sub: 'primary · 95% of uses', Comp: Av_CampfireInk, note: 'Discord profile, default bot avatar, anywhere we need "here is Bonfire".' },
+                { name: 'Ember', sub: 'minor · emphasis', Comp: Av_Ember, note: 'Inline in buttons, status dots, small-scale applications where the logs would clip.' },
+                { name: 'Unlit', sub: 'dormant · edge', Comp: Av_Unlit, note: 'Rare. "Bot is offline" placeholder, maintenance mode, decommissioned state.' },
+              ].map(({ name, sub, Comp, note }) => (
+                <div key={name} style={{ background: BF.ink, borderRadius: 4, padding: 28, border: `1px solid ${BF.border}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
+                    <Comp size={96}/>
+                  </div>
+                  <div style={{
+                    fontFamily: BF.fontDisplay, fontSize: 22, fontStyle: 'italic',
+                    fontWeight: 500, color: BF.cream, marginBottom: 2,
+                  }}>{name}</div>
+                  <div style={{
+                    fontFamily: BF.fontMono, fontSize: 10, color: BF.ember,
+                    letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
+                  }}>{sub}</div>
+                  <div style={{
+                    fontFamily: BF.fontBody, fontSize: 13, color: BF.muted,
+                    lineHeight: 1.5,
+                  }}>{note}</div>
+                </div>
+              ))}
+            </div>
+
+            <Rule mt={48}/>
+
+            <FieldLabel>Size ladder · Campfire (primary)</FieldLabel>
+            <div style={{ display: 'flex', gap: 32, alignItems: 'flex-end', marginTop: 16, marginBottom: 28 }}>
+              {[128, 96, 64, 40, 24, 16].map(size => (
+                <div key={size} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                  <Av_CampfireInk size={size}/>
+                  <div style={{ fontFamily: BF.fontMono, fontSize: 10, color: BF.dim, letterSpacing: 1 }}>{size}</div>
+                </div>
+              ))}
+            </div>
+
+            <Prose size={14} maxWidth={560}>
+              Below 24px, the logs lose detail and the mark reads as a flame on ink. For favicon-scale usage (16px and below), prefer <em>Ember</em> — it's legible at any size.
+            </Prose>
+          </BookSection>
+        </div>
+      );
+    }
+
+    // ── 04 · Palette ───────────────────────────────────────────────────────
+    function SectionPalette() {
+      const neutrals = [
+        { name: 'ink', value: BF.ink, usage: 'deepest surface · page bg' },
+        { name: 'dark', value: BF.dark, usage: 'card bg on dark pages' },
+        { name: 'panel', value: BF.panel, usage: 'raised surface · inset' },
+        { name: 'border', value: BF.border, usage: 'hairlines · dividers' },
+        { name: 'dim', value: BF.dim, usage: 'tertiary text' },
+        { name: 'muted', value: BF.muted, usage: 'secondary text' },
+        { name: 'cream', value: BF.cream, usage: 'primary text on dark' },
+        { name: 'paper', value: BF.paper, usage: 'warm off-white bg' },
+      ];
+      const states = [
+        { name: 'ember', value: BF.ember, usage: 'RUNNING · brand primary', role: 'burning' },
+        { name: 'emberHot', value: BF.emberHot, usage: 'running glow · highlight', role: '—' },
+        { name: 'spark', value: BF.spark, usage: 'STARTING · kindling', role: 'lighting' },
+        { name: 'ice', value: BF.ice, usage: 'STOPPING · cooling', role: 'dying down' },
+        { name: 'ash', value: BF.ash, usage: 'STOPPED · cool neutral', role: 'out' },
+        { name: 'danger', value: BF.danger, usage: 'ERROR · stop sign', role: 'trouble' },
+        { name: 'ok', value: BF.ok, usage: 'SUCCESS · confirm', role: '—' },
+      ];
+
+      return (
+        <div id="palette" className="anchor">
+          <BookSection kicker="04 · Palette" title={<>warm earth, <br/>one loud color</>}>
+            <Prose>
+              One warm orange (ember) does all the work. Everything else is neutral — ink to cream, with a single warm paper alternative. State colors pick up the narrative: spark for kindling, ice for cooling, ash for out, danger for trouble. Each sits between ember and neutral in chroma so they feel like family.
+            </Prose>
+
+            <Rule mt={32}/>
+
+            <FieldLabel>Neutrals · warm earth</FieldLabel>
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2,
+              marginTop: 14, marginBottom: 40, maxWidth: 900,
+            }}>
+              {neutrals.map(({ name, value, usage }) => (
+                <div key={name} style={{
+                  background: value, padding: '80px 16px 14px',
+                  color: (name === 'cream' || name === 'paper') ? BF.ink : BF.cream,
+                  minHeight: 120, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+                }}>
+                  <div style={{ fontFamily: BF.fontBody, fontSize: 14, fontWeight: 600 }}>{name}</div>
+                  <div style={{ fontFamily: BF.fontMono, fontSize: 10, opacity: 0.75, marginTop: 2 }}>{value}</div>
+                  <div style={{ fontFamily: BF.fontBody, fontSize: 11, opacity: 0.7, marginTop: 6 }}>{usage}</div>
+                </div>
+              ))}
+            </div>
+
+            <FieldLabel>States · narrative colors</FieldLabel>
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2,
+              marginTop: 14, marginBottom: 28, maxWidth: 900,
+            }}>
+              {states.map(({ name, value, usage, role }) => (
+                <div key={name} style={{
+                  background: value, padding: '80px 16px 14px',
+                  color: BF.ink,
+                  minHeight: 120, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+                }}>
+                  <div style={{ fontFamily: BF.fontBody, fontSize: 14, fontWeight: 600 }}>{name}</div>
+                  <div style={{ fontFamily: BF.fontMono, fontSize: 10, opacity: 0.75, marginTop: 2 }}>{value}</div>
+                  <div style={{ fontFamily: BF.fontBody, fontSize: 11, opacity: 0.75, marginTop: 6 }}>{usage}</div>
+                  {role !== '—' && (
+                    <div style={{
+                      fontFamily: BF.fontDisplay, fontStyle: 'italic', fontSize: 15,
+                      marginTop: 8, color: BF.ink, opacity: 0.9,
+                    }}>"{role}"</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </BookSection>
+        </div>
+      );
+    }
+
+    // ── 05 · Type ─────────────────────────────────────────────────────────
+    function SectionType() {
+      return (
+        <div id="type" className="anchor">
+          <BookSection kicker="05 · Type" title="three voices">
+            <Prose>
+              Three families, one job each. <em>Cormorant Garamond</em> carries personality — headlines, the wordmark, titles in status embeds. <em>Inter Tight</em> carries information — body copy, labels, buttons. <em>JetBrains Mono</em> carries data — IP addresses, timestamps, uptimes, anything you'd paste into a terminal.
+            </Prose>
+
+            <Rule mt={32}/>
+
+            {/* Cormorant spec */}
+            <div style={{ marginBottom: 48 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, marginBottom: 18 }}>
+                <FieldLabel>Display · Cormorant Garamond</FieldLabel>
+                <div style={{ fontFamily: BF.fontMono, fontSize: 10, color: BF.dim, letterSpacing: 1 }}>italic 500 · 32–200px</div>
+              </div>
+              <div style={{
+                fontFamily: BF.fontDisplay, fontSize: 96, fontWeight: 500,
+                fontStyle: 'italic', color: BF.cream, lineHeight: 1, letterSpacing: -2,
+              }}>the fire is warm</div>
+              <div style={{
+                fontFamily: BF.fontDisplay, fontSize: 42, fontWeight: 500,
+                fontStyle: 'italic', color: BF.muted, lineHeight: 1.1, letterSpacing: -0.8,
+                marginTop: 14,
+              }}>used in embed titles, hero headlines, the wordmark itself</div>
+            </div>
+
+            {/* Inter spec */}
+            <div style={{ marginBottom: 48 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, marginBottom: 18 }}>
+                <FieldLabel>Body · Inter Tight</FieldLabel>
+                <div style={{ fontFamily: BF.fontMono, fontSize: 10, color: BF.dim, letterSpacing: 1 }}>400 · 500 · 600 · 11–22px</div>
+              </div>
+              <div style={{ fontFamily: BF.fontBody, fontSize: 22, fontWeight: 600, color: BF.cream, marginBottom: 6 }}>
+                burning for 1h 42m · lit by @otso
+              </div>
+              <div style={{ fontFamily: BF.fontBody, fontSize: 15, color: BF.cream, opacity: 0.8, maxWidth: 520, lineHeight: 1.55 }}>
+                Body copy, status lines, labels. Inter Tight is slightly narrower than stock Inter — better for the dense, data-rich embeds we build.
+              </div>
+              <div style={{ fontFamily: BF.fontBody, fontSize: 11, color: BF.dim, letterSpacing: 1, marginTop: 10, textTransform: 'uppercase' }}>
+                ADDRESS · UPTIME · BACKUP
+              </div>
+            </div>
+
+            {/* Mono spec */}
+            <div style={{ marginBottom: 32 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, marginBottom: 18 }}>
+                <FieldLabel>Data · JetBrains Mono</FieldLabel>
+                <div style={{ fontFamily: BF.fontMono, fontSize: 10, color: BF.dim, letterSpacing: 1 }}>400 · 500 · 10–14px</div>
+              </div>
+              <div style={{ fontFamily: BF.fontMono, fontSize: 14, color: BF.ember, marginBottom: 4 }}>
+                13.48.12.34:2456
+              </div>
+              <div style={{ fontFamily: BF.fontMono, fontSize: 13, color: BF.cream, marginBottom: 4 }}>
+                01:42:08 · i-0a4f2c9a81b2c3d8e
+              </div>
+              <div style={{ fontFamily: BF.fontMono, fontSize: 11, color: BF.muted, letterSpacing: 0.3 }}>
+                err · ec2_InsufficientInstanceCapacity · req 4f2c9a81
+              </div>
+            </div>
+
+            <Rule mt={32}/>
+
+            {/* Scale */}
+            <FieldLabel>Scale</FieldLabel>
+            <table style={{
+              width: '100%', maxWidth: 720, marginTop: 14,
+              fontFamily: BF.fontMono, fontSize: 12, color: BF.cream,
+              borderCollapse: 'collapse',
+            }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${BF.border}` }}>
+                  <th style={{ textAlign: 'left', padding: '8px 0', color: BF.dim, fontWeight: 500, letterSpacing: 1, textTransform: 'uppercase', fontSize: 10 }}>step</th>
+                  <th style={{ textAlign: 'left', padding: '8px 0', color: BF.dim, fontWeight: 500, letterSpacing: 1, textTransform: 'uppercase', fontSize: 10 }}>size</th>
+                  <th style={{ textAlign: 'left', padding: '8px 0', color: BF.dim, fontWeight: 500, letterSpacing: 1, textTransform: 'uppercase', fontSize: 10 }}>use</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ['display-xl', '64–84px', 'hero headlines, brand-book covers'],
+                  ['display-lg', '42–52px', 'section heads, embed game titles (hero)'],
+                  ['display-md', '24–32px', 'embed titles (card), alert headlines'],
+                  ['body-lg',    '16–18px', 'long-form body, intro copy'],
+                  ['body',       '14–15px', 'default body, status lines'],
+                  ['body-sm',    '13px',    'compact embeds, help text'],
+                  ['label',      '11–12px', 'field labels, kickers, metadata'],
+                  ['mono-data',  '13–14px', 'IP, uptime, numerics'],
+                  ['mono-tag',   '10–11px', 'state codes, log lines, hints'],
+                ].map(([step, size, use]) => (
+                  <tr key={step} style={{ borderBottom: `1px solid ${BF.border}` }}>
+                    <td style={{ padding: '10px 0', color: BF.ember }}>{step}</td>
+                    <td style={{ padding: '10px 0' }}>{size}</td>
+                    <td style={{ padding: '10px 0', fontFamily: BF.fontBody, color: BF.muted }}>{use}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </BookSection>
+        </div>
+      );
+    }
+
+    // ── 06 · States ───────────────────────────────────────────────────────
+    function SectionStates() {
+      const rows = [
+        { state: 'running',      label: 'burning',      color: BF.ember,  copy: '"burning for 1h 42m · lit by @otso"',             vibe: 'present, warm, alive' },
+        { state: 'starting',     label: 'lighting',     color: BF.spark,  copy: '"tending to it · lit 34s ago · usually ~2 min"',  vibe: 'ongoing, patient' },
+        { state: 'stopping',     label: 'dying down',   color: BF.ice,    copy: '"saving the world, banking the coals"',           vibe: 'winding down' },
+        { state: 'stopped',      label: 'out',          color: BF.ash,    copy: '"last burned 2h ago"',                            vibe: 'quiet, cold, neutral' },
+        { state: 'error',        label: 'trouble',      color: BF.danger, copy: '"couldn\'t light the fire"',                      vibe: 'honest, un-alarming' },
+        { state: 'unauthorized', label: 'not yours',    color: BF.ash,    copy: '"you can\'t tend this fire"',                     vibe: 'friendly refusal' },
+        { state: 'not_found',    label: 'no such fire', color: BF.ash,    copy: '"no fire by that name"',                          vibe: 'gentle, directive' },
+      ];
+
+      return (
+        <div id="states" className="anchor">
+          <BookSection kicker="06 · States" title={<>every state <br/>has a look, <br/>a word, a feeling</>}>
+            <Prose>
+              The state vocabulary is the most-reused part of the system. Color, word, and voice move together. Keep the fire metaphor consistent — if you need a new state, ask "what does this feel like at the fireside?" before you ship a label.
+            </Prose>
+
+            <div style={{ marginTop: 32 }}>
+              {rows.map(({ state, label, color, copy, vibe }) => (
+                <div key={state} style={{
+                  display: 'grid', gridTemplateColumns: '180px 140px 1fr 200px',
+                  gap: 24, alignItems: 'center', padding: '18px 0',
+                  borderBottom: `1px solid ${BF.border}`,
+                }}>
+                  <div>
+                    <BFStatusPill state={state} size="lg"/>
+                  </div>
+                  <div style={{
+                    fontFamily: BF.fontMono, fontSize: 11, color: BF.dim,
+                    letterSpacing: 1, textTransform: 'uppercase',
+                  }}>{state}</div>
+                  <div style={{
+                    fontFamily: BF.fontBody, fontSize: 14, color: BF.cream,
+                    fontStyle: 'italic',
+                  }}>{copy}</div>
+                  <div style={{
+                    fontFamily: BF.fontDisplay, fontStyle: 'italic', fontSize: 16,
+                    color: BF.muted,
+                  }}>{vibe}</div>
+                </div>
+              ))}
+            </div>
+          </BookSection>
+        </div>
+      );
+    }
+
+    // ── 07 · Copy ─────────────────────────────────────────────────────────
+    function SectionCopy() {
+      return (
+        <div id="copy" className="anchor">
+          <BookSection kicker="07 · Copy" title="words we use · words we don't">
+            <Prose>
+              A cheat sheet. Not exhaustive — if in doubt, reread the voice section and pick the word that belongs at a fireside.
+            </Prose>
+
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16,
+              marginTop: 32, maxWidth: 900,
+            }}>
+              <div style={{
+                padding: '12px 16px', fontFamily: BF.fontMono, fontSize: 10,
+                color: BF.dim, letterSpacing: 2, textTransform: 'uppercase',
+                borderBottom: `1px solid ${BF.border}`,
+              }}>Concept</div>
+              <div style={{
+                padding: '12px 16px', fontFamily: BF.fontMono, fontSize: 10,
+                color: BF.ok, letterSpacing: 2, textTransform: 'uppercase',
+                borderBottom: `1px solid ${BF.border}`,
+              }}>Say</div>
+              <div style={{
+                padding: '12px 16px', fontFamily: BF.fontMono, fontSize: 10,
+                color: BF.danger, letterSpacing: 2, textTransform: 'uppercase',
+                borderBottom: `1px solid ${BF.border}`,
+              }}>Don't say</div>
+
+              {[
+                ['start',      'light the fire · light · kindle',        'provision · spin up · boot'],
+                ['stop',       'put it out · bank · let it go out',      'terminate · kill · shut down'],
+                ['running',    'burning · the fire is on',               'UP · ONLINE · active'],
+                ['starting',   'lighting · tending · coaxing',           'BOOTING · INITIALIZING'],
+                ['stopped',    'out · dark · cold',                      'OFFLINE · DOWN · dead'],
+                ['latency',    'takes a minute · patience',              'please wait · loading...'],
+                ['error',      'trouble · sideways · didn\'t take',      'ERROR · FAILURE · EXCEPTION'],
+                ['invoker',    'lit by @x · tended by @x',                'created by · owner'],
+                ['backup',     'last backup · last coal saved',           'snapshot · AMI'],
+                ['server',     'the fire · the server (when plain)',      'the instance · EC2 · host'],
+                ['user-role',  'keeper · tender · whoever has roles',    'admin · superuser'],
+                ['greeting',   'here · ready · here it is',                'Hello! I am your assistant!'],
+              ].map(([k, say, dont]) => (
+                <React.Fragment key={k}>
+                  <div style={{
+                    padding: '14px 16px', fontFamily: BF.fontMono, fontSize: 12,
+                    color: BF.cream, letterSpacing: 0.5,
+                    borderBottom: `1px solid ${BF.border}`,
+                  }}>{k}</div>
+                  <div style={{
+                    padding: '14px 16px', fontFamily: BF.fontBody, fontSize: 14,
+                    color: BF.cream, borderBottom: `1px solid ${BF.border}`,
+                  }}>{say}</div>
+                  <div style={{
+                    padding: '14px 16px', fontFamily: BF.fontBody, fontSize: 14,
+                    color: BF.muted, textDecoration: 'line-through',
+                    textDecorationColor: BF.danger, textDecorationThickness: 1,
+                    borderBottom: `1px solid ${BF.border}`,
+                  }}>{dont}</div>
+                </React.Fragment>
+              ))}
+            </div>
+
+            {/* Command descriptions — voice surfacing in the slash menu */}
+            <Rule mt={56}/>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, marginBottom: 4, marginTop: 32 }}>
+              <FieldLabel>Commands</FieldLabel>
+              <div style={{ fontFamily: BF.fontMono, fontSize: 10, color: BF.dim, letterSpacing: 1 }}>voice · in Discord's slash menu</div>
+            </div>
+            <Prose>
+              The slash-menu descriptions are brand surface too — they're the first Bonfire voice a new player sees, before any embed. Write them in character.
+            </Prose>
+
+            <div style={{
+              marginTop: 20, maxWidth: 720,
+              background: BF.discordBg, padding: '16px 18px', borderRadius: 4,
+              border: `1px solid ${BF.border}`,
+            }}>
+              {[
+                ['/valheim status',  'check on the fire'],
+                ['/valheim start',   'light the fire'],
+                ['/valheim stop',    'put it out'],
+                ['/valheim help',    'what you can ask me'],
+              ].map(([cmd, desc]) => (
+                <div key={cmd} style={{
+                  display: 'flex', alignItems: 'baseline', gap: 18,
+                  padding: '8px 0', borderBottom: `1px solid ${BF.border}`,
+                }}>
+                  <div style={{ fontFamily: BF.fontMono, fontSize: 13, color: BF.ember, minWidth: 180 }}>{cmd}</div>
+                  <div style={{ fontFamily: BF.fontBody, fontSize: 13, color: BF.cream }}>{desc}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{
+              fontFamily: BF.fontBody, fontSize: 13, color: BF.muted,
+              marginTop: 14, lineHeight: 1.55, fontStyle: 'italic', maxWidth: 640,
+            }}>
+              Descriptions appear in Discord's slash-autocomplete UI. No capitalization, no period — they read as what the bot <em>offers</em>, not what the command <em>does</em>. Order by frequency (status first — most used).
+            </div>
+
+            {/* Registration model */}
+            <Rule mt={40}/>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, marginBottom: 4, marginTop: 32 }}>
+              <FieldLabel>Registration</FieldLabel>
+              <div style={{ fontFamily: BF.fontMono, fontSize: 10, color: BF.dim, letterSpacing: 1 }}>guild-scoped · allowlist-driven</div>
+            </div>
+            <Prose>
+              Commands are registered <em>per-guild</em>, not globally. The <span style={{ fontFamily: BF.fontMono, color: BF.ember }}>allowed_guilds</span> SSM list is the source of truth; the CLI registers and unregisters guild commands as a side-effect of authorizing a guild for a game. A server that's allowlisted only for Valheim sees only <span style={{ fontFamily: BF.fontMono, color: BF.ember }}>/valheim</span> in its slash menu — no other games cluttering the autocomplete.
+            </Prose>
+            <div style={{
+              fontFamily: BF.fontMono, fontSize: 12, color: BF.cream, lineHeight: 1.8,
+              marginTop: 16, padding: '14px 18px', background: BF.discordBg,
+              borderRadius: 4, border: `1px solid ${BF.border}`, maxWidth: 720,
+            }}>
+              <span style={{ color: BF.muted }}>$</span> bonfire guild authorize &lt;guild_id&gt; valheim<br/>
+              <span style={{ color: BF.dim }}>→ adds to /bonfire/allowed_guilds</span><br/>
+              <span style={{ color: BF.dim }}>→ PUT /applications/&#123;app&#125;/guilds/&#123;g&#125;/commands</span><br/>
+              <span style={{ color: BF.dim }}>→ /valheim appears in that guild's slash menu within seconds</span>
+            </div>
+          </BookSection>
+        </div>
+      );
+    }
+
+    // ── 08 · In context ───────────────────────────────────────────────────
+    function SectionContext() {
+      return (
+        <div id="context" className="anchor">
+          <BookSection kicker="08 · In context" title="all of it, working together">
+            <Prose>
+              Three real surfaces, showing the system in use. This is what the brand looks like at rest — the intended final shape of a Bonfire interaction.
+            </Prose>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 28, marginTop: 32, maxWidth: 640 }}>
+              <div>
+                <FieldLabel>Hero · public broadcast (running)</FieldLabel>
+                <div style={{ background: BF.discordBg, padding: '14px 0', borderRadius: 4, marginTop: 12 }}>
+                  <DiscordMsg><HeroEmbed/></DiscordMsg>
+                </div>
+              </div>
+              <div>
+                <FieldLabel>Card · default</FieldLabel>
+                <div style={{ background: BF.discordBg, padding: '14px 0', borderRadius: 4, marginTop: 12 }}>
+                  <DiscordMsg><CardEmbed/></DiscordMsg>
+                </div>
+              </div>
+              <div>
+                <FieldLabel>Line · ephemeral personal status</FieldLabel>
+                <div style={{ background: BF.discordBg, padding: '14px 0', borderRadius: 4, marginTop: 12 }}>
+                  <EphemeralWrap>
+                    <DiscordMsg><LineEmbed/></DiscordMsg>
+                  </EphemeralWrap>
+                </div>
+              </div>
+              <div>
+                <FieldLabel>Alert · friendly refusal</FieldLabel>
+                <div style={{ background: BF.discordBg, padding: '14px 0', borderRadius: 4, marginTop: 12 }}>
+                  <EphemeralWrap>
+                    <DiscordMsg>
+                      <AlertEmbed kind="unauthorized" body="Only members of #valheim can start and stop this server. Ask an admin to add you." hint="err · discord_role_missing"/>
+                    </DiscordMsg>
+                  </EphemeralWrap>
+                </div>
+              </div>
+              <div>
+                <FieldLabel>Help · plain text, ephemeral</FieldLabel>
+                <div style={{ background: BF.discordBg, padding: '14px 0', borderRadius: 4, marginTop: 12 }}>
+                  <EphemeralWrap>
+                    <DiscordMsg>
+                      <div style={{ fontFamily: BF.fontMono, fontSize: 13, color: BF.discordText, lineHeight: 1.7, whiteSpace: 'pre' }}>
+{`bonfire · keeper here.
+
+/valheim start    light the fire
+/valheim stop     put it out
+/valheim status   check on it
+/valheim help     this
+
+tip: anyone in the channel can start or stop — it's a shared fire.`}
+                      </div>
+                    </DiscordMsg>
+                  </EphemeralWrap>
+                </div>
+                <div style={{ fontFamily: BF.fontBody, fontSize: 12, color: BF.muted, marginTop: 10, lineHeight: 1.55, fontStyle: 'italic' }}>
+                  No embed chrome. Help is reference, not state — the bot just answers quietly. Commands listed in order of frequency, not alphabet.
+                </div>
+              </div>
+            </div>
+          </BookSection>
+        </div>
+      );
+    }
+
+    // ── Colophon ──────────────────────────────────────────────────────────
+    function Colophon() {
+      return (
+        <section style={{
+          padding: '80px 72px 120px', borderTop: `1px solid ${BF.border}`,
+          background: BF.ink, marginTop: 60,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 }}>
+            <Av_CampfireInk size={40}/>
+            <div style={{
+              fontFamily: BF.fontDisplay, fontSize: 32, fontWeight: 500,
+              fontStyle: 'italic', color: BF.cream, letterSpacing: -0.6,
+            }}>bon <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: BF.ember, verticalAlign: 'middle', margin: '0 6px 6px' }}/> fire</div>
+          </div>
+          <div style={{
+            fontFamily: BF.fontBody, fontSize: 14, color: BF.muted,
+            maxWidth: 600, lineHeight: 1.6,
+          }}>
+            This brand book is a living document. When something feels off — a word, a color, a case — update this, not the implementation. Implementation follows the book.
+          </div>
+          <div style={{
+            fontFamily: BF.fontMono, fontSize: 10, color: BF.dim,
+            letterSpacing: 2, textTransform: 'uppercase', marginTop: 24,
+          }}>
+            v1.3 · april 2026 · one source of truth
+          </div>
+        </section>
+      );
+    }
+
+    function App() {
+      return (
+        <div>
+          <Cover/>
+          <SectionVoice/>
+          <SectionWordmark/>
+          <SectionAvatar/>
+          <SectionPalette/>
+          <SectionType/>
+          <SectionStates/>
+          <SectionCopy/>
+          <SectionContext/>
+          <Colophon/>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
