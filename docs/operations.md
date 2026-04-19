@@ -58,6 +58,33 @@ The full data directories are:
 
 These directories exist on the host EC2 instance. You can inspect them directly after connecting via SSM.
 
+## Brand / Architecture Rollout
+
+Two-stack deploy; order matters — `terraform/bot/` references the bot IAM role created by `terraform/account/` via ARN.
+
+```bash
+cd terraform/account && terraform apply       # admin profile
+make -C discord_bot/go                         # produces discord_bot/bonfire_discord_bot.zip
+cd terraform/bot && terraform apply            # bonfire-deploy profile
+```
+
+One-time after the first deploy of the brand assets: upload `discord_bot/assets/avatar/bonfire-lit-512.png` at Discord Developer Portal → `<app>` → Bot → Icon.
+
+### Smoke test
+
+In an allowlisted guild, as an authorized user:
+
+- `/valheim start` on a stopped server — deferred "lighting the fire… (0:00)" should edit to "lit the fire · `<addr>`" within ~2 min
+- `/valheim status` — Line embed with a colored `●` dot
+- `/valheim stop` — public Hero "put out by @you"
+- `/valheim help` — plain mono text block (no embed chrome)
+
+CloudWatch `/aws/lambda/bonfire_bot`: every log line starts with `[ack]`, `[poll]`, or `[shared]`. No tokens, signatures, or raw request bodies anywhere.
+
+### Rollback
+
+Revert the merge commit on `main`, rebuild the zip (`make -C discord_bot/go`), then `terraform apply` in `terraform/bot/`. IAM statements in `terraform/account/` are additive — safe to leave.
+
 ## Checking Backup Status
 
 **Bucket names:**
