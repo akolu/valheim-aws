@@ -34,7 +34,7 @@ func runRetire(cmd *cobra.Command, args []string) error {
 	if err := validateGameName(game); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	cfg, err := awsConfig(ctx)
 	if err != nil {
