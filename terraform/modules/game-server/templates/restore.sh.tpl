@@ -42,11 +42,13 @@ if [ ! "$(ls -A $DATA_PATH 2>/dev/null)" ]; then
     # Fall back to long-term archive bucket (pattern: <game>-long-term-backups)
     LT_BUCKET="$${GAME_NAME}-long-term-backups"
 
-    # Archives are stored as <timestamp>/<game>_backup_latest.tar.gz; pick the lexicographically
-    # last (most recent) key matching the _latest pattern.
+    # Archives written by `bonfire retire` are keyed <timestamp>/<game>_backup_latest.tar.gz,
+    # where <timestamp> is UTC YYYY-MM-DDTHHMMSSZ. Match that prefix explicitly: keys sort
+    # lexicographically, so an un-prefixed legacy key at the bucket root would otherwise beat
+    # every timestamped one ('v' > '2') and restore the oldest archive instead of the newest.
     LT_KEY=$(aws s3 ls "s3://$LT_BUCKET/" --recursive 2>/dev/null \
       | awk '{print $NF}' \
-      | grep "$${GAME_NAME}_backup_latest\.tar\.gz" \
+      | grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z/$${GAME_NAME}_backup_latest\.tar\.gz$" \
       | sort | tail -1)
 
     if [ -n "$LT_KEY" ]; then
