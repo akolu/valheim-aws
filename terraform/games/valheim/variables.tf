@@ -31,9 +31,11 @@ variable "timezone" {
 
 # Instance Configuration
 variable "instance_type" {
+  # t3.medium (3.75 GiB usable) is below what lloesche/valheim-server wants —
+  # it logs "3.75 GiB is not enough memory" with zero players connected.
   description = "EC2 instance type"
   type        = string
-  default     = "t3.medium"
+  default     = "t3.large"
 }
 
 variable "volume_size" {
