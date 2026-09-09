@@ -47,12 +47,12 @@ Save data is stored on the host and bind-mounted into the container at the same 
 
 | Game | Path (host = container) |
 |------|------------------------|
-| Valheim | `/opt/valheim/data/worlds_local/` |
+| Valheim | `/config/worlds_local/<WorldName>/` |
 | Satisfactory | `/config/saved/` |
 | Factorio | `/factorio/saves/` |
 
 The full data directories are:
-- Valheim: `/opt/valheim/data`
+- Valheim: `/config` (note: `/opt/valheim` is the game *install* dir, not save data)
 - Satisfactory: `/config`
 - Factorio: `/factorio`
 

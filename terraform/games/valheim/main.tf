@@ -30,8 +30,15 @@ locals {
       AUTO_BACKUP   = "1"
     }
 
-    data_path    = "/opt/valheim/data"
-    backup_paths = ["/opt/valheim/data/worlds_local"]
+    # /config is where lloesche/valheim-server actually keeps world saves.
+    # /opt/valheim is the game *install* directory — mounting /opt/valheim/data
+    # there just grafts an unused subdirectory into the install tree, so world
+    # data lived on the container's writable layer and was destroyed on every
+    # `docker-compose down` (including the 30-minute idle auto-stop).
+    #
+    # Since Valheim 1.0 each world is a directory: worlds_local/<WorldName>/_main.0.fwl2
+    data_path    = "/config"
+    backup_paths = ["/config/worlds_local"]
 
     resources = {
       instance_type = var.instance_type
