@@ -54,11 +54,13 @@ func init() {
 	botCmd.AddCommand(botUntrustCmd)
 }
 
-// botSSMClient checks bot deployment and returns an SSM client.
+// botSSMClient returns an SSM client for the ACL commands.
+//
+// Deliberately not gated on checkBotDeployed: trust/untrust/grant/revoke only
+// read and write SSM parameters, needing neither terraform nor the Discord
+// credentials in terraform/bot/terraform.tfvars. That gate belongs on deploy
+// and update, which do read those credentials.
 func botSSMClient(ctx context.Context) (*ssm.Client, error) {
-	if err := checkBotDeployed(); err != nil {
-		return nil, err
-	}
 	cfg, err := awsConfig(ctx)
 	if err != nil {
 		return nil, err

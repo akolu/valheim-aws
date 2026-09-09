@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -266,4 +269,44 @@ func (e *errorSSMClient) PutParameter(ctx context.Context, params *ssm.PutParame
 
 func (e *errorSSMClient) DeleteParameter(ctx context.Context, params *ssm.DeleteParameterInput, _ ...func(*ssm.Options)) (*ssm.DeleteParameterOutput, error) {
 	return nil, nil
+}
+
+// --- botSSMClient deployment-gate tests ---
+
+// TestBotSSMClient_DoesNotRequireTFVars pins the rule that the ACL commands
+// (trust/untrust/grant/revoke) reach SSM directly and must not be gated on
+// terraform/bot/terraform.tfvars. That file holds deploy-time Discord
+// credentials and lives only on the operator's machine; its absence says
+// nothing about whether the bot is deployed in AWS. Gating the ACL commands on
+// it locks an operator out of a perfectly healthy bot on any new machine.
+func TestBotSSMClient_DoesNotRequireTFVars(t *testing.T) {
+	repoRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, "terraform", "games"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BONFIRE_REPO_ROOT", repoRoot)
+
+	_, err := botSSMClient(context.Background())
+	if err != nil && strings.Contains(err.Error(), "Bot not deployed yet") {
+		t.Errorf("ACL commands must not require terraform/bot/terraform.tfvars, got: %v", err)
+	}
+}
+
+// TestRunBotUpdate_MissingTFVars is the other half of the rule: update reads
+// the Discord credentials out of terraform/bot/terraform.tfvars, so it must
+// still fail fast with the friendly message when that file is absent.
+func TestRunBotUpdate_MissingTFVars(t *testing.T) {
+	repoRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, "terraform", "games"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BONFIRE_REPO_ROOT", repoRoot)
+
+	err := runBotUpdate(nil, nil)
+	if err == nil {
+		t.Fatal("expected error when terraform.tfvars missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "Bot not deployed yet") {
+		t.Errorf("error should mention 'Bot not deployed yet', got: %v", err)
+	}
 }
