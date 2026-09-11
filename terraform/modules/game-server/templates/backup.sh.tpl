@@ -37,15 +37,20 @@ else
   TIMESTAMPED_KEY="$${GAME_NAME}_backup_$${TIMESTAMP}.tar.gz"
   LATEST_KEY="$${GAME_NAME}_backup_latest.tar.gz"
 
-  # Upload timestamped backup
-  if aws s3 cp "/tmp/$${GAME_NAME}_backup.tar.gz" "s3://$S3_BUCKET/$${TIMESTAMPED_KEY}"; then
-    echo "Uploaded timestamped backup: $${TIMESTAMPED_KEY}"
+  # Upload _latest FIRST. It is the only key restore.sh reads, and this script
+  # runs during shutdown — a spot reclaim allows roughly two minutes. Whichever
+  # write goes second is the one lost when the box is cut off mid-shutdown, so
+  # the pointer must not be the straggler. Observed 2026-09-11: the timestamped
+  # object landed at 09:14:43Z and the instance died before the copy to _latest,
+  # leaving the pointer ~12 hours stale while a good backup sat beside it.
+  if aws s3 cp "/tmp/$${GAME_NAME}_backup.tar.gz" "s3://$S3_BUCKET/$${LATEST_KEY}"; then
+    echo "Uploaded $${LATEST_KEY}"
 
-    # Update _latest to point to the most recent backup
-    if aws s3 cp "s3://$S3_BUCKET/$${TIMESTAMPED_KEY}" "s3://$S3_BUCKET/$${LATEST_KEY}"; then
-      echo "Updated $${LATEST_KEY} to most recent backup"
+    # Keep a timestamped copy for history (server-side copy, no re-upload)
+    if aws s3 cp "s3://$S3_BUCKET/$${LATEST_KEY}" "s3://$S3_BUCKET/$${TIMESTAMPED_KEY}"; then
+      echo "Uploaded timestamped backup: $${TIMESTAMPED_KEY}"
     else
-      echo "Warning: Failed to update $${LATEST_KEY}"
+      echo "Warning: Failed to write timestamped copy $${TIMESTAMPED_KEY}"
     fi
 
     # Prune old backups beyond retention count
