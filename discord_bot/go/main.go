@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -20,6 +21,7 @@ import (
 	lambdaapi "github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/smithy-go"
 )
 
 // Discord interaction type constants
@@ -347,11 +349,31 @@ func findInstanceByGame(ctx context.Context, client EC2API, game string) (instan
 	return info, nil
 }
 
+// startInstance runs on the interaction ack path, which Discord gives 3 seconds
+// before it declares the app unresponsive. InsufficientInstanceCapacity is
+// returned as HTTP 500, so the SDK's default retry policy treats it as
+// transient and burns the whole budget re-asking a question whose answer will
+// not change for minutes — measured at 3.5-7.3s in production on 2026-09-11,
+// which is why every /start looked like the bot was dead. Cap attempts so the
+// call fails fast enough for the real reason to reach the user.
 func startInstance(ctx context.Context, client EC2API, instanceID string) error {
 	_, err := client.StartInstances(ctx, &ec2.StartInstancesInput{
 		InstanceIds: []string{instanceID},
+	}, func(o *ec2.Options) {
+		o.RetryMaxAttempts = 1
 	})
 	return err
+}
+
+// isInsufficientCapacity reports whether err is EC2 telling us there is no spot
+// capacity to start this instance. It is a wait-and-retry condition rather than
+// a fault, and worth saying so plainly.
+func isInsufficientCapacity(err error) bool {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode() == "InsufficientInstanceCapacity"
+	}
+	return false
 }
 
 func stopInstance(ctx context.Context, client EC2API, instanceID string) error {
@@ -550,6 +572,13 @@ func handleStartCommand(
 	// state == "stopped": call StartInstances, self-invoke poll, return deferred ACK.
 	if err := startInstance(ctx, ec2Client, info.InstanceID); err != nil {
 		log.Printf("[ack] handleStartCommand: EC2 error starting instance %q for game %q: %v", info.InstanceID, gameName, err)
+		if isInsufficientCapacity(err) {
+			return ephemeralEmbedResponse(alertEmbed(
+				copyAlertNoCapacity,
+				copyAlertNoCapacityBody,
+				copyHintNoCapacity,
+			))
+		}
 		return ephemeralEmbedResponse(alertEmbed(
 			copyAlertSomethingSideways,
 			"i couldn't light the fire just now.",

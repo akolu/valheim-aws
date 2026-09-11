@@ -23,6 +23,7 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	"github.com/aws/smithy-go"
 )
 
 // mockEC2Client implements EC2API for tests without requiring AWS credentials.
@@ -39,6 +40,10 @@ type mockEC2Client struct {
 
 	startCalled bool
 	stopCalled  bool
+
+	// startOptFns records the per-operation options passed to StartInstances,
+	// so tests can assert on retry behaviour.
+	startOptFns []func(*ec2.Options)
 
 	// capturedDescribeInput records the last DescribeInstances call for assertions
 	capturedDescribeInput *ec2.DescribeInstancesInput
@@ -60,8 +65,9 @@ func (m *mockEC2Client) DescribeInstances(_ context.Context, input *ec2.Describe
 	return m.describeOutput, nil
 }
 
-func (m *mockEC2Client) StartInstances(_ context.Context, _ *ec2.StartInstancesInput, _ ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error) {
+func (m *mockEC2Client) StartInstances(_ context.Context, _ *ec2.StartInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error) {
 	m.startCalled = true
+	m.startOptFns = optFns
 	return &ec2.StartInstancesOutput{}, m.startErr
 }
 
@@ -1889,5 +1895,58 @@ func TestStatusPending_v1_5_Uses_LitXAgo(t *testing.T) {
 	}
 	if strings.Contains(body, "started") {
 		t.Errorf("v1.5: pending copy should not say 'started' anymore, got: %s", body)
+	}
+}
+
+// --- /start latency and error-reporting under spot capacity shortage ---
+//
+// Production incident 2026-09-11: AWS reclaimed the spot instance, and every
+// subsequent `/valheim start` appeared to Discord as "the application did not
+// respond". The bot was in fact working — InsufficientInstanceCapacity comes
+// back as HTTP 500, the SDK treats that as retryable, and three attempts took
+// 3.5-7.3s. Discord's initial interaction deadline is 3 seconds, so the alert
+// embed was always produced too late to be delivered.
+
+// TestStartInstances_CapsRetriesForDiscordDeadline pins the latency bound: the
+// interactive path must not spend its 3s budget on SDK retries of an error that
+// will not succeed on retry.
+func TestStartInstances_CapsRetriesForDiscordDeadline(t *testing.T) {
+	ssmClient := ssmWithGuildAndUsers("g1", "valheim", "admin")
+	mock := &mockEC2Client{describeOutput: stoppedInstanceWithID("i-test")}
+	interaction := interactionWith("valheim", "start", "admin", "g1")
+
+	handleInteraction(context.Background(), interaction, mock, ssmClient, nil, &mockLambdaClient{}, "bonfire_bot")
+
+	if !mock.startCalled {
+		t.Fatal("StartInstances should have been called")
+	}
+	opts := ec2.Options{RetryMaxAttempts: 3}
+	for _, fn := range mock.startOptFns {
+		fn(&opts)
+	}
+	if opts.RetryMaxAttempts != 1 {
+		t.Errorf("StartInstances must cap retries to stay inside Discord's 3s deadline; got RetryMaxAttempts=%d", opts.RetryMaxAttempts)
+	}
+}
+
+// TestStartInstances_InsufficientCapacityIsExplained pins the copy: a capacity
+// shortage is a wait-and-retry condition the user can act on, not an opaque
+// "something went sideways".
+func TestStartInstances_InsufficientCapacityIsExplained(t *testing.T) {
+	ssmClient := ssmWithGuildAndUsers("g1", "valheim", "admin")
+	mock := &mockEC2Client{
+		describeOutput: stoppedInstanceWithID("i-test"),
+		startErr: &smithy.GenericAPIError{
+			Code:    "InsufficientInstanceCapacity",
+			Message: "You can't start the Spot Instance 'i-test' because there is no available Spot capacity.",
+		},
+	}
+	interaction := interactionWith("valheim", "start", "admin", "g1")
+
+	resp := handleInteraction(context.Background(), interaction, mock, ssmClient, nil, &mockLambdaClient{}, "bonfire_bot")
+
+	body := strings.ToLower(resp.Body)
+	if !strings.Contains(body, "capacity") {
+		t.Errorf("capacity shortage should be named in the user-facing response, got: %s", resp.Body)
 	}
 }

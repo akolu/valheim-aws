@@ -82,11 +82,14 @@ const (
 	copyAlertUnauthorizedHeadline = "you can't tend this fire"
 	copyAlertUnauthorizedBody     = "ask a keeper if you'd like access"
 	copyAlertGuildBlocked         = "this bot isn't keeping a fire in this server"
+	copyAlertNoCapacity           = "no firewood right now"
+	copyAlertNoCapacityBody       = "aws has no spot capacity in this zone — try again in a few minutes."
 
 	// Alert hints (monospace footer).
 	copyHintTagCollision     = "err · ec2_tag_collision"
 	copyHintRoleMissing      = "err · discord_role_missing"
 	copyHintEC2ErrorFmt      = "err · ec2_%s"
+	copyHintNoCapacity       = "err · ec2_insufficient_capacity"
 	copyHintS3ErrorFmt       = "err · s3_%s"
 	copyHintLambdaErrorFmt   = "err · lambda_%s"
 	copyHintTryStatusFmt     = "try · /%s status"
