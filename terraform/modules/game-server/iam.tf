@@ -44,7 +44,22 @@ resource "aws_iam_policy" "game_server_s3_backup" {
         Action = [
           "s3:PutObject",
           "s3:GetObject",
-          "s3:ListBucket"
+          "s3:ListBucket",
+
+          # backup.sh derives the timestamped history object from _latest with a
+          # server-side `aws s3 cp`. Below the CLI's 8 MB multipart threshold that
+          # is one CopyObject and S3 carries the tags across itself. At or above
+          # it, the destination is created by CreateMultipartUpload — which has no
+          # source to copy tags from — so the CLI reads them and re-applies them.
+          # Without these two the copy fails on GetObjectTagging the moment a world
+          # outgrows 8 MB, which is what froze valheim's _latest on 2026-09-11 and
+          # factorio's in April.
+          "s3:GetObjectTagging",
+          "s3:PutObjectTagging",
+
+          # Pruning past backup_retention_count runs `aws s3 rm`. Without this the
+          # prune has silently never worked: 48 objects against a retention of 5.
+          "s3:DeleteObject"
         ]
         Effect = "Allow"
         Resource = [
