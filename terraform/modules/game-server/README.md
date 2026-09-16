@@ -32,8 +32,8 @@ module "valheim" {
       SERVER_NAME = "My Server"
       WORLD_NAME  = "MyWorld"
     }
-    data_path    = "/opt/valheim/data"
-    backup_paths = ["/opt/valheim/data/worlds"]
+    data_path    = "/config"
+    backup_paths = ["/config/worlds_local"]
   }
 
   backup_s3_bucket = "my-game-backups"
