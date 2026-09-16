@@ -69,3 +69,8 @@ variable "backup_retention_days" {
   default     = 7
 }
 
+variable "use_spot" {
+  description = "Run the server on spot capacity. Cheaper but interruptible — set false when uptime during play hours matters more than cost. Changing this rebuilds the server from the latest S3 backup, so change it between sessions."
+  type        = bool
+  default     = true
+}

@@ -1,10 +1,10 @@
 # game-server module
 
-Provisions a containerized game server on an EC2 spot instance with automated backups to S3, CloudWatch monitoring, and SSM-based shell access.
+Provisions a containerized game server on EC2 with automated backups to S3, CloudWatch monitoring, and SSM-based shell access. Capacity is spot by default and on-demand when `use_spot = false`.
 
 ## What it creates
 
-- EC2 spot instance (persistent, stops on interruption rather than terminating)
+- EC2 instance, spot or on-demand per `use_spot`. Spot requests are persistent and stop on interruption rather than terminating, so the root volume survives.
 - Latest Amazon Linux 2023 AMI (or caller-supplied AMI)
 - Optional Elastic IP for a stable public address
 - Security group with configurable game ports and optional SSH break-glass
@@ -32,8 +32,8 @@ module "valheim" {
       SERVER_NAME = "My Server"
       WORLD_NAME  = "MyWorld"
     }
-    data_path    = "/opt/valheim/data"
-    backup_paths = ["/opt/valheim/data/worlds"]
+    data_path    = "/config"
+    backup_paths = ["/config/worlds_local"]
   }
 
   backup_s3_bucket = "my-game-backups"
@@ -53,6 +53,7 @@ module "valheim" {
 | `allowed_ssh_cidr_blocks` | CIDR blocks allowed for SSH. Empty by default — use SSM for normal access. | `list(string)` | `[]` | no |
 | `backup_retention_count` | Number of timestamped backups to retain in S3 | `number` | `5` | no |
 | `enable_eip` | Allocate and associate an Elastic IP | `bool` | `true` | no |
+| `use_spot` | Run on spot capacity. Cheaper but interruptible. | `bool` | `true` | no |
 | `tags` | Tags applied to all resources | `map(string)` | `{}` | no |
 
 ### game object
@@ -83,8 +84,7 @@ module "valheim" {
 
 | Name | Description |
 |------|-------------|
-| `instance_id` | EC2 spot instance ID |
-| `spot_request_id` | Spot instance request ID |
+| `instance_id` | EC2 instance ID |
 | `public_ip` | Public IP address (Elastic IP if `enable_eip = true`) |
 | `private_key_pem` | Generated SSH private key in PEM format (sensitive; `null` if `public_key` was supplied) |
 | `ssh_key_name` | Name of the AWS key pair |

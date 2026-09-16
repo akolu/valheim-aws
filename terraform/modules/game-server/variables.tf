@@ -77,3 +77,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "use_spot" {
+  description = "Run the instance on spot capacity. Spot is cheap but interruptible; set false for games that need reliable uptime during play hours. Changing this replaces the instance and its root volume — the world comes back from the S3 backup, so flip it between sessions, not during one."
+  type        = bool
+  default     = true
+}

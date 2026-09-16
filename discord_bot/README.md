@@ -1,6 +1,6 @@
 # Bonfire Discord Bot
 
-A Discord bot for controlling game servers on AWS EC2 spot instances.
+A Discord bot for controlling game servers running on AWS EC2, on spot or on-demand capacity.
 
 ## Overview
 

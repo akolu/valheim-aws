@@ -15,7 +15,7 @@ resource "aws_cloudwatch_metric_alarm" "game_server_network_idle" {
   ]
 
   dimensions = {
-    InstanceId = aws_spot_instance_request.game_server.spot_instance_id
+    InstanceId = aws_instance.game_server.id
   }
 
   tags = merge(var.tags, {
@@ -32,7 +32,7 @@ resource "aws_cloudwatch_event_rule" "game_server_spot_interruption" {
     source      = ["aws.ec2"],
     detail-type = ["EC2 Spot Instance Interruption Warning"],
     detail = {
-      instance-id = [aws_spot_instance_request.game_server.spot_instance_id]
+      instance-id = [aws_instance.game_server.id]
     }
   })
 

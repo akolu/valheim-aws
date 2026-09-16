@@ -11,7 +11,7 @@ resource "aws_cloudwatch_dashboard" "game_server_dashboard" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/EC2", "CPUUtilization", "InstanceId", aws_spot_instance_request.game_server.spot_instance_id]
+            ["AWS/EC2", "CPUUtilization", "InstanceId", aws_instance.game_server.id]
           ]
           view    = "timeSeries"
           stacked = false
@@ -28,8 +28,8 @@ resource "aws_cloudwatch_dashboard" "game_server_dashboard" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/EC2", "NetworkIn", "InstanceId", aws_spot_instance_request.game_server.spot_instance_id],
-            ["AWS/EC2", "NetworkOut", "InstanceId", aws_spot_instance_request.game_server.spot_instance_id]
+            ["AWS/EC2", "NetworkIn", "InstanceId", aws_instance.game_server.id],
+            ["AWS/EC2", "NetworkOut", "InstanceId", aws_instance.game_server.id]
           ]
           view    = "timeSeries"
           stacked = false
@@ -46,8 +46,8 @@ resource "aws_cloudwatch_dashboard" "game_server_dashboard" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/EC2", "StatusCheckFailed_Instance", "InstanceId", aws_spot_instance_request.game_server.spot_instance_id],
-            ["AWS/EC2", "StatusCheckFailed_System", "InstanceId", aws_spot_instance_request.game_server.spot_instance_id]
+            ["AWS/EC2", "StatusCheckFailed_Instance", "InstanceId", aws_instance.game_server.id],
+            ["AWS/EC2", "StatusCheckFailed_System", "InstanceId", aws_instance.game_server.id]
           ]
           view    = "timeSeries"
           stacked = false
@@ -64,8 +64,8 @@ resource "aws_cloudwatch_dashboard" "game_server_dashboard" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/EC2", "EBSReadOps", "InstanceId", aws_spot_instance_request.game_server.spot_instance_id],
-            ["AWS/EC2", "EBSWriteOps", "InstanceId", aws_spot_instance_request.game_server.spot_instance_id]
+            ["AWS/EC2", "EBSReadOps", "InstanceId", aws_instance.game_server.id],
+            ["AWS/EC2", "EBSWriteOps", "InstanceId", aws_instance.game_server.id]
           ]
           view    = "timeSeries"
           stacked = false

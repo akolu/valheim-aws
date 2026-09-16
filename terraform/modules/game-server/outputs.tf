@@ -1,16 +1,11 @@
 output "instance_id" {
-  description = "The ID of the EC2 spot instance"
-  value       = aws_spot_instance_request.game_server.spot_instance_id
-}
-
-output "spot_request_id" {
-  description = "ID of the spot instance request"
-  value       = aws_spot_instance_request.game_server.id
+  description = "The ID of the EC2 instance"
+  value       = aws_instance.game_server.id
 }
 
 output "public_ip" {
   description = "Public IP address of the game server"
-  value       = var.enable_eip ? aws_eip.game_server_eip[0].public_ip : aws_spot_instance_request.game_server.public_ip
+  value       = var.enable_eip ? aws_eip.game_server_eip[0].public_ip : aws_instance.game_server.public_ip
 }
 
 output "private_key_pem" {
@@ -31,5 +26,5 @@ output "security_group_id" {
 
 output "ssh_command" {
   description = "SSH command to connect to the server"
-  value       = "ssh -i ${var.ssh_key_name}.pem ec2-user@${var.enable_eip ? aws_eip.game_server_eip[0].public_ip : aws_spot_instance_request.game_server.public_ip}"
+  value       = "ssh -i ${var.ssh_key_name}.pem ec2-user@${var.enable_eip ? aws_eip.game_server_eip[0].public_ip : aws_instance.game_server.public_ip}"
 }
