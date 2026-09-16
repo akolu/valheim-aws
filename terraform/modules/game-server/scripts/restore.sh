@@ -1,8 +1,21 @@
 #!/bin/bash
-BACKUP_DIR="/tmp/${game_name}_backup"
-S3_BUCKET="${s3_bucket}"
-GAME_NAME="${game_name}"
-DATA_PATH="${data_path}"
+# Restores the game's save data from S3 when the data directory is empty.
+#
+# Runs as ExecStartPre on the game's systemd unit. Configuration arrives as
+# environment variables from that unit rather than being baked in at terraform
+# render time, which keeps this file executable standalone and free of `$${}`
+# escaping:
+#
+#   GAME_NAME   short game identifier, used in S3 key names
+#   S3_BUCKET   short-term backup bucket
+#   DATA_PATH   directory the game reads its saves from
+
+# Fail loudly rather than restoring the wrong thing into the wrong place.
+GAME_NAME="${GAME_NAME:?not set — expected from the systemd unit}"
+S3_BUCKET="${S3_BUCKET:?not set — expected from the systemd unit}"
+DATA_PATH="${DATA_PATH:?not set — expected from the systemd unit}"
+
+BACKUP_DIR="/tmp/${GAME_NAME}_backup"
 
 echo "Checking for existing $GAME_NAME data..."
 
@@ -10,23 +23,23 @@ echo "Checking for existing $GAME_NAME data..."
 mkdir -p "$DATA_PATH"
 
 # Check if data directory is empty or missing key files
-if [ ! "$(ls -A $DATA_PATH 2>/dev/null)" ]; then
+if [ ! "$(ls -A "$DATA_PATH" 2>/dev/null)" ]; then
   echo "Data directory empty. Attempting to restore from backup..."
 
   # Clean up any previous restore attempts
-  rm -rf $BACKUP_DIR
-  rm -f /tmp/$${GAME_NAME}_backup.tar.gz
+  rm -rf "$BACKUP_DIR"
+  rm -f "/tmp/${GAME_NAME}_backup.tar.gz"
 
   # Download backup from S3
-  if aws s3 cp "s3://$S3_BUCKET/$${GAME_NAME}_backup_latest.tar.gz" "/tmp/$${GAME_NAME}_backup.tar.gz"; then
+  if aws s3 cp "s3://$S3_BUCKET/${GAME_NAME}_backup_latest.tar.gz" "/tmp/${GAME_NAME}_backup.tar.gz"; then
     echo "Backup downloaded successfully"
 
     # Extract backup
-    mkdir -p $BACKUP_DIR
-    tar -xzf "/tmp/$${GAME_NAME}_backup.tar.gz" -C "/tmp"
+    mkdir -p "$BACKUP_DIR"
+    tar -xzf "/tmp/${GAME_NAME}_backup.tar.gz" -C "/tmp"
 
     # Copy restored files to data path
-    cp -r $BACKUP_DIR/* "$DATA_PATH/" 2>/dev/null || echo "Warning: Failed to copy restored files"
+    cp -r "$BACKUP_DIR"/* "$DATA_PATH/" 2>/dev/null || echo "Warning: Failed to copy restored files"
 
     # Set ownership (container typically runs as UID 1000)
     chown -R 1000:1000 "$DATA_PATH"
@@ -34,13 +47,13 @@ if [ ! "$(ls -A $DATA_PATH 2>/dev/null)" ]; then
     echo "Data successfully restored from backup"
 
     # Cleanup
-    rm -rf $BACKUP_DIR
-    rm -f /tmp/$${GAME_NAME}_backup.tar.gz
+    rm -rf "$BACKUP_DIR"
+    rm -f "/tmp/${GAME_NAME}_backup.tar.gz"
   else
     echo "No backup found in S3 bucket $S3_BUCKET. Checking long-term archive bucket..."
 
     # Fall back to long-term archive bucket (pattern: <game>-long-term-backups)
-    LT_BUCKET="$${GAME_NAME}-long-term-backups"
+    LT_BUCKET="${GAME_NAME}-long-term-backups"
 
     # Archives written by `bonfire retire` are keyed <timestamp>/<game>_backup_latest.tar.gz,
     # where <timestamp> is UTC YYYY-MM-DDTHHMMSSZ. Match that prefix explicitly: keys sort
@@ -48,20 +61,20 @@ if [ ! "$(ls -A $DATA_PATH 2>/dev/null)" ]; then
     # every timestamped one ('v' > '2') and restore the oldest archive instead of the newest.
     LT_KEY=$(aws s3 ls "s3://$LT_BUCKET/" --recursive 2>/dev/null \
       | awk '{print $NF}' \
-      | grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z/$${GAME_NAME}_backup_latest\.tar\.gz$" \
+      | grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z/${GAME_NAME}_backup_latest\.tar\.gz$" \
       | sort | tail -1)
 
     if [ -n "$LT_KEY" ]; then
       echo "Found long-term archive: s3://$LT_BUCKET/$LT_KEY"
-      if aws s3 cp "s3://$LT_BUCKET/$LT_KEY" "/tmp/$${GAME_NAME}_backup.tar.gz"; then
+      if aws s3 cp "s3://$LT_BUCKET/$LT_KEY" "/tmp/${GAME_NAME}_backup.tar.gz"; then
         echo "Long-term archive downloaded successfully"
 
         # Extract backup
-        mkdir -p $BACKUP_DIR
-        tar -xzf "/tmp/$${GAME_NAME}_backup.tar.gz" -C "/tmp"
+        mkdir -p "$BACKUP_DIR"
+        tar -xzf "/tmp/${GAME_NAME}_backup.tar.gz" -C "/tmp"
 
         # Copy restored files to data path
-        cp -r $BACKUP_DIR/* "$DATA_PATH/" 2>/dev/null || echo "Warning: Failed to copy restored files"
+        cp -r "$BACKUP_DIR"/* "$DATA_PATH/" 2>/dev/null || echo "Warning: Failed to copy restored files"
 
         # Set ownership (container typically runs as UID 1000)
         chown -R 1000:1000 "$DATA_PATH"
@@ -69,8 +82,8 @@ if [ ! "$(ls -A $DATA_PATH 2>/dev/null)" ]; then
         echo "Data successfully restored from long-term archive"
 
         # Cleanup
-        rm -rf $BACKUP_DIR
-        rm -f /tmp/$${GAME_NAME}_backup.tar.gz
+        rm -rf "$BACKUP_DIR"
+        rm -f "/tmp/${GAME_NAME}_backup.tar.gz"
       else
         echo "Warning: Failed to download long-term archive from s3://$LT_BUCKET/$LT_KEY"
       fi

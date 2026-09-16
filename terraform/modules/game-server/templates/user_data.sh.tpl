@@ -45,6 +45,13 @@ Requires=docker.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/${game_name}
+# backup.sh and restore.sh are plain shell and read their configuration here
+# rather than having it baked in at render time.
+Environment=GAME_NAME=${game_name}
+Environment=S3_BUCKET=${s3_bucket}
+Environment=DATA_PATH=${data_path}
+Environment="BACKUP_PATHS=${backup_paths}"
+Environment=BACKUP_RETENTION_COUNT=${backup_retention_count}
 ExecStartPre=/opt/${game_name}/scripts/restore.sh
 ExecStart=/usr/local/bin/docker-compose up -d
 ExecStop=/usr/local/bin/docker-compose down

@@ -12,7 +12,7 @@ Provisions a containerized game server on EC2 with automated backups to S3, Clou
 - Read-only IAM policy for long-term archive bucket (restore fallback)
 - SSH key pair (generated or caller-supplied)
 - CloudWatch dashboard for instance metrics
-- User data that installs Docker, writes a docker-compose file, and configures backup/restore scripts as systemd timers
+- User data that installs Docker, writes a docker-compose file, and installs `scripts/backup.sh` and `scripts/restore.sh` on the game's systemd unit (`ExecStartPre` restores, `ExecStop` backs up)
 
 ## Usage
 

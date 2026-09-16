@@ -43,23 +43,22 @@ locals {
     init_service = var.game.init_service
   })
 
-  backup_script_content = templatefile("${path.module}/templates/backup.sh.tpl", {
-    game_name              = local.game_name
-    s3_bucket              = var.backup_s3_bucket
-    backup_paths           = local.backup_paths
-    backup_retention_count = var.backup_retention_count
-  })
+  # Plain shell, not templates: they take their configuration from the systemd
+  # unit's environment so they can be executed and tested without terraform.
+  backup_script_content  = file("${path.module}/scripts/backup.sh")
+  restore_script_content = file("${path.module}/scripts/restore.sh")
 
-  restore_script_content = templatefile("${path.module}/templates/restore.sh.tpl", {
-    game_name = local.game_name
-    s3_bucket = var.backup_s3_bucket
-    data_path = local.data_path
-  })
+  # Space-separated, because the scripts read it back with `read -a`. Paths
+  # containing spaces are not supported; no game has needed one.
+  backup_paths_env = join(" ", local.backup_paths)
 
   user_data = templatefile("${path.module}/templates/user_data.sh.tpl", {
     game_name              = local.game_name
     display_name           = local.display_name
     data_path              = local.data_path
+    s3_bucket              = var.backup_s3_bucket
+    backup_paths           = local.backup_paths_env
+    backup_retention_count = var.backup_retention_count
     docker_compose_content = local.docker_compose_content
     backup_script_content  = local.backup_script_content
     restore_script_content = local.restore_script_content
