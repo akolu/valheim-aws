@@ -67,6 +67,7 @@ module "game_server" {
   ssh_key_name     = var.ssh_key_name
   public_key       = var.public_key
   enable_eip       = var.enable_eip
+  use_spot         = var.use_spot
   tags             = local.tags
 }
 

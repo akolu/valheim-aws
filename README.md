@@ -1,6 +1,6 @@
 # Bonfire - Game Server on AWS
 
-A CLI and Terraform toolkit for deploying and managing dedicated game servers on AWS using EC2 Spot Instances. Supports Valheim, Satisfactory, and Factorio, with an extensible architecture for adding more games. Includes a Discord bot for in-channel server control and automatic S3-backed saves at two tiers.
+A CLI and Terraform toolkit for deploying and managing dedicated game servers on AWS EC2, on spot or on-demand capacity per game. Supports Valheim, Satisfactory, and Factorio, with an extensible architecture for adding more games. Includes a Discord bot for in-channel server control and automatic S3-backed saves at two tiers.
 
 ## Architecture
 
@@ -14,12 +14,12 @@ graph TD
     end
 
     subgraph TF ["Terraform Workspaces"]
-        tgame["terraform/games/&lt;game&gt;\n(EC2 spot instance + backup bucket)"]
+        tgame["terraform/games/&lt;game&gt;\n(EC2 instance + backup bucket)"]
         tarchive["terraform/archive\n(long-term buckets, one per game)"]
     end
 
     subgraph AWS
-        ec2["EC2 Spot Instance\n(game server)"]
+        ec2["EC2 Instance\n(spot or on-demand)"]
         backup["S3: bonfire-&lt;game&gt;-backups-*\n(short-term backups)"]
         longterm["S3: &lt;game&gt;-long-term-backups\n(long-term archives)"]
         lambda["Lambda + API GW\n(Discord bot)"]
@@ -271,7 +271,7 @@ See the [Discord Bot README](discord_bot/README.md) for setup and deployment ins
 
 ## Data & Backups
 
-Bonfire uses a two-tier backup model so save data survives both spot interruptions and end-of-season teardowns.
+Bonfire uses a two-tier backup model so save data survives instance replacement, spot interruptions and end-of-season teardowns.
 
 ### Short-term backups
 

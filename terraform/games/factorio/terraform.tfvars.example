@@ -13,3 +13,8 @@
 # instance_type = "t3.medium"  # t3.medium is sufficient for most Factorio servers
 # volume_size   = 30
 
+# Optional: capacity model. Spot (the default) is ~1/3 the price but AWS reclaims
+# it when capacity is tight. Set false for on-demand when uninterrupted sessions
+# matter more than cost. Changing this replaces the instance — the world is
+# restored from the latest S3 backup, so do it between sessions.
+# use_spot = false

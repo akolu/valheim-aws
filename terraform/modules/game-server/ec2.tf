@@ -66,47 +66,46 @@ locals {
   })
 }
 
-# Request a spot instance
-resource "aws_spot_instance_request" "game_server" {
+# The game server instance. Spot vs on-demand is a per-game choice: spot is
+# roughly a third of the price but is reclaimed when capacity gets tight, which
+# bursty low-player games tolerate and a nightly-session game does not.
+resource "aws_instance" "game_server" {
   ami                    = var.ami_id != "" ? var.ami_id : data.aws_ami.amazon_linux.id
   instance_type          = local.instance_type
   key_name               = aws_key_pair.game_server_key.key_name
   vpc_security_group_ids = [aws_security_group.game_server_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.game_server_profile.name
 
-  spot_type            = "persistent"
-  wait_for_fulfillment = true
-
-  user_data = local.user_data
+  # user_data carries the docker-compose file and the backup/restore scripts, and
+  # cloud-init only runs it per-instance. Without this the provider would apply a
+  # changed user_data in place (stop, ModifyInstanceAttribute, start) and the new
+  # config would never be written to disk. aws_spot_instance_request forced
+  # replacement here; keep that behaviour. Data is safe — the world is restored
+  # from S3 on boot.
+  user_data                   = local.user_data
+  user_data_replace_on_change = true
 
   root_block_device {
     volume_size = local.volume_size
     volume_type = "gp3"
   }
 
+  dynamic "instance_market_options" {
+    for_each = var.use_spot ? [1] : []
+
+    content {
+      market_type = "spot"
+
+      spot_options {
+        # Persistent so the instance comes back when capacity returns, stopped
+        # rather than terminated so the EBS root volume survives an interruption.
+        spot_instance_type             = "persistent"
+        instance_interruption_behavior = "stop"
+      }
+    }
+  }
+
   tags = merge(var.tags, {
     Name = local.instance_name
   })
-
-  # Ensure instance is not terminated when spot request is cancelled
-  instance_interruption_behavior = "stop"
-}
-
-# Propagate tags to the fulfilled EC2 instance (spot request tags only apply to the request, not the instance)
-resource "aws_ec2_tag" "game_server_name" {
-  resource_id = aws_spot_instance_request.game_server.spot_instance_id
-  key         = "Name"
-  value       = local.instance_name
-}
-
-resource "aws_ec2_tag" "game_server_project" {
-  resource_id = aws_spot_instance_request.game_server.spot_instance_id
-  key         = "Project"
-  value       = "bonfire"
-}
-
-resource "aws_ec2_tag" "game_server_game" {
-  resource_id = aws_spot_instance_request.game_server.spot_instance_id
-  key         = "Game"
-  value       = local.game_name
 }
