@@ -41,5 +41,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: shellcheck backup.sh restore.sh tests/stubs/* tests/helper.bash
-      - run: npm install -g bats@1.14.0
+      # npm publishes bats-core a release or two behind Homebrew; 1.13.0 is its latest.
+      - run: npm install -g bats@1.13.0
       - run: bats tests
