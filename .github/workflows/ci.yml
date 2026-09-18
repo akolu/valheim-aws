@@ -41,6 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: shellcheck backup.sh restore.sh tests/stubs/* tests/helper.bash
-      # npm publishes bats-core a release or two behind Homebrew; 1.13.0 is its latest.
-      - run: sudo npm install -g bats@1.13.0
-      - run: bats tests
+      # bats runs straight out of its own checkout: no package manager, no sudo,
+      # and the tag pins it the way the Go jobs pin their toolchain.
+      - run: git clone --depth 1 --branch v1.14.0 https://github.com/bats-core/bats-core.git "$RUNNER_TEMP/bats"
+      - run: $RUNNER_TEMP/bats/bin/bats tests
