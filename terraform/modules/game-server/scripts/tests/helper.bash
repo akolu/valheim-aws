@@ -90,6 +90,24 @@ assert_equal() {
   fi
 }
 
+# An archive whose gzip stream stops partway, as an interrupted download or a
+# /tmp that filled up during extraction leaves it. tar writes out what it has
+# read before it hits the cut, so some of the world lands in the staging
+# directory and the extraction still fails.
+make_truncated_tarball() {
+  local game="$1" dest="$2"
+  local stage="${BATS_TEST_TMPDIR}/truncated_stage"
+  rm -rf "$stage"
+  mkdir -p "${stage}/${game}_backup/worlds_local"
+  # Incompressible and well over tar's record size, so there is something on
+  # both sides of the cut: files extracted, and an archive that ends early.
+  head -c 1048576 /dev/urandom > "${stage}/${game}_backup/worlds_local/Pupari26.db"
+  echo "world meta" > "${stage}/${game}_backup/worlds_local/Pupari26.fwl"
+  tar -czf "${dest}.whole" -C "$stage" "${game}_backup"
+  head -c 400000 "${dest}.whole" > "$dest"
+  rm -f "${dest}.whole"
+}
+
 # An archive from before the worlds_local-scoped backup_paths layout: its
 # top-level directory is not <game>_backup, so unpacking it puts nothing where
 # restore.sh looks.

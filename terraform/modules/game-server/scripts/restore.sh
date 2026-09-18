@@ -26,7 +26,15 @@ BACKUP_DIR="/tmp/${GAME_NAME}_backup"
 unpack_into_data_path() {
   rm -rf "$BACKUP_DIR"
   mkdir -p "$BACKUP_DIR"
-  tar -xzf "/tmp/${GAME_NAME}_backup.tar.gz" -C "/tmp"
+  # A cut-short archive — an interrupted download, or a /tmp that filled up
+  # while extracting into it — still leaves files in BACKUP_DIR, which is enough
+  # for the guard below to pass. Stop before any of it reaches DATA_PATH, and
+  # drop the archive so the next boot re-downloads rather than reusing it.
+  if ! tar -xzf "/tmp/${GAME_NAME}_backup.tar.gz" -C "/tmp"; then
+    echo "Error: failed to unpack the downloaded archive"
+    rm -rf "$BACKUP_DIR" "/tmp/${GAME_NAME}_backup.tar.gz"
+    return 1
+  fi
 
   cp -r "$BACKUP_DIR"/* "$DATA_PATH/" 2>/dev/null || echo "Warning: Failed to copy restored files"
 

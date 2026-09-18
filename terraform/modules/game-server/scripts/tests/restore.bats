@@ -113,6 +113,25 @@ teardown() {
   assert_equal "" "$(ls -A "$DATA_PATH")"
 }
 
+@test "fails the unit when the archive unpacks only partway" {
+  # A cut-short archive still leaves files in the staging directory, which is
+  # enough to satisfy the "unpacked no files" guard: the unit would start the
+  # game on half a world, and the next stop would back that half up over
+  # _latest. backup.sh already refuses to upload a truncated archive; this is
+  # the same failure on the way back in.
+  TRUNCATED_TARBALL="${BATS_TEST_TMPDIR}/truncated.tar.gz"
+  make_truncated_tarball "$GAME_NAME" "$TRUNCATED_TARBALL"
+  put_object "${S3_BUCKET}/valheim_backup_latest.tar.gz" "$TRUNCATED_TARBALL"
+
+  run bash "${SCRIPTS_DIR}/restore.sh"
+
+  assert_equal 1 "$status"
+  assert_contains "failed to unpack" "$output"
+  # Nothing half-restored left behind: the next boot retries from an empty
+  # directory rather than deciding it already has a world.
+  assert_equal "" "$(ls -A "$DATA_PATH")"
+}
+
 @test "fails the unit when the long-term archive unpacks nothing" {
   export AWS_LS_RECURSIVE_FIXTURE="${FIXTURES_DIR}/long_term_multi_season.txt"
   put_object "${LT_BUCKET}/${NEWEST_ARCHIVE}" "$LEGACY_TARBALL"
