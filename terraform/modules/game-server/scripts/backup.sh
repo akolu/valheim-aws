@@ -40,14 +40,20 @@ for path in "${paths[@]}"; do
   fi
 done
 
-# Check if any files were copied
-if [ ! "$(ls -A "$BACKUP_DIR")" ]; then
+# Check if any files were copied. Count files, not directory entries: `cp -r` of
+# an empty worlds_local leaves a *directory* behind, so a check on the staging
+# area's entries only ever fires when the source path is missing entirely. That
+# is how roughly eight months of empty backups reported success while the live
+# world was discarded on every idle auto-stop.
+if [ -z "$(find "$BACKUP_DIR" -type f -print -quit)" ]; then
   echo "Error: No files found to backup."
   echo "Backup failed but continuing shutdown process."
+elif ! tar -czf "/tmp/${GAME_NAME}_backup.tar.gz" -C "/tmp" "${GAME_NAME}_backup"; then
+  # An interrupted write — a full /tmp, which already holds a copy of the world —
+  # leaves a truncated archive behind. Uploading it would overwrite _latest, the
+  # only key restore.sh reads, with a file that restores nothing.
+  echo "Error: failed to create backup archive. Leaving the backup in S3 untouched."
 else
-  # Create tarball
-  tar -czf "/tmp/${GAME_NAME}_backup.tar.gz" -C "/tmp" "${GAME_NAME}_backup"
-
   # Generate timestamped key
   TIMESTAMP=$(date -u +"%Y-%m-%dT%H%M%SZ")
   TIMESTAMPED_KEY="${GAME_NAME}_backup_${TIMESTAMP}.tar.gz"
@@ -70,8 +76,11 @@ else
     fi
 
     # Prune old backups beyond retention count
-    # List all timestamped backups sorted by date (oldest first), excluding _latest
-    BACKUP_LIST=$(aws s3 ls "s3://$S3_BUCKET/" | grep "${GAME_NAME}_backup_" | grep -v "_latest" | sort | awk '{print $NF}')
+    # List all timestamped backups oldest first, excluding _latest. Sort the keys
+    # rather than the listing lines: the line starts with S3's LastModified, and a
+    # backup that has been re-copied by hand carries a fresh one while still being
+    # the oldest backup. The timestamp in the key is the age that matters.
+    BACKUP_LIST=$(aws s3 ls "s3://$S3_BUCKET/" | grep "${GAME_NAME}_backup_" | grep -v "_latest" | awk '{print $NF}' | sort)
     BACKUP_COUNT=$(echo "$BACKUP_LIST" | grep -c '[^[:space:]]' || true)
 
     if [ "$BACKUP_COUNT" -gt "$BACKUP_RETENTION_COUNT" ]; then

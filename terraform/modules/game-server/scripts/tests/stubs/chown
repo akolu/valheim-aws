@@ -1,0 +1,6 @@
+#!/bin/bash
+# restore.sh hands the restored data to UID 1000 (the container user). That
+# needs root, which a test run is not, so the real chown would fail noisily on
+# every restore path. Nothing about the scripts' logic depends on the outcome,
+# so the stub simply succeeds.
+exit 0
