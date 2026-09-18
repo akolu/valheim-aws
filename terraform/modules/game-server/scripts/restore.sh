@@ -17,6 +17,39 @@ DATA_PATH="${DATA_PATH:?not set — expected from the systemd unit}"
 
 BACKUP_DIR="/tmp/${GAME_NAME}_backup"
 
+# Unpacks the downloaded archive into DATA_PATH, and fails if nothing lands
+# there. Archives written before the worlds_local-scoped backup_paths layout
+# have a different top-level directory, so they unpack somewhere the copy below
+# never looks. Reporting success in that case is the expensive failure: the game
+# starts a fresh world, and the next shutdown backs that world up over _latest,
+# taking the real save with it. Better to fail the unit and leave S3 alone.
+unpack_into_data_path() {
+  rm -rf "$BACKUP_DIR"
+  mkdir -p "$BACKUP_DIR"
+  # A cut-short archive — an interrupted download, or a /tmp that filled up
+  # while extracting into it — still leaves files in BACKUP_DIR, which is enough
+  # for the guard below to pass. Stop before any of it reaches DATA_PATH, and
+  # drop the archive so the next boot re-downloads rather than reusing it.
+  if ! tar -xzf "/tmp/${GAME_NAME}_backup.tar.gz" -C "/tmp"; then
+    echo "Error: failed to unpack the downloaded archive"
+    rm -rf "$BACKUP_DIR" "/tmp/${GAME_NAME}_backup.tar.gz"
+    return 1
+  fi
+
+  cp -r "$BACKUP_DIR"/* "$DATA_PATH/" 2>/dev/null || echo "Warning: Failed to copy restored files"
+
+  if [ -z "$(find "$DATA_PATH" -type f -print -quit)" ]; then
+    echo "Error: the archive unpacked no files into $DATA_PATH"
+    rm -rf "$BACKUP_DIR" "/tmp/${GAME_NAME}_backup.tar.gz"
+    return 1
+  fi
+
+  # Set ownership (container typically runs as UID 1000)
+  chown -R 1000:1000 "$DATA_PATH"
+
+  rm -rf "$BACKUP_DIR" "/tmp/${GAME_NAME}_backup.tar.gz"
+}
+
 echo "Checking for existing $GAME_NAME data..."
 
 # Create data directory if it doesn't exist
@@ -34,21 +67,8 @@ if [ ! "$(ls -A "$DATA_PATH" 2>/dev/null)" ]; then
   if aws s3 cp "s3://$S3_BUCKET/${GAME_NAME}_backup_latest.tar.gz" "/tmp/${GAME_NAME}_backup.tar.gz"; then
     echo "Backup downloaded successfully"
 
-    # Extract backup
-    mkdir -p "$BACKUP_DIR"
-    tar -xzf "/tmp/${GAME_NAME}_backup.tar.gz" -C "/tmp"
-
-    # Copy restored files to data path
-    cp -r "$BACKUP_DIR"/* "$DATA_PATH/" 2>/dev/null || echo "Warning: Failed to copy restored files"
-
-    # Set ownership (container typically runs as UID 1000)
-    chown -R 1000:1000 "$DATA_PATH"
-
+    unpack_into_data_path || exit 1
     echo "Data successfully restored from backup"
-
-    # Cleanup
-    rm -rf "$BACKUP_DIR"
-    rm -f "/tmp/${GAME_NAME}_backup.tar.gz"
   else
     echo "No backup found in S3 bucket $S3_BUCKET. Checking long-term archive bucket..."
 
@@ -69,21 +89,8 @@ if [ ! "$(ls -A "$DATA_PATH" 2>/dev/null)" ]; then
       if aws s3 cp "s3://$LT_BUCKET/$LT_KEY" "/tmp/${GAME_NAME}_backup.tar.gz"; then
         echo "Long-term archive downloaded successfully"
 
-        # Extract backup
-        mkdir -p "$BACKUP_DIR"
-        tar -xzf "/tmp/${GAME_NAME}_backup.tar.gz" -C "/tmp"
-
-        # Copy restored files to data path
-        cp -r "$BACKUP_DIR"/* "$DATA_PATH/" 2>/dev/null || echo "Warning: Failed to copy restored files"
-
-        # Set ownership (container typically runs as UID 1000)
-        chown -R 1000:1000 "$DATA_PATH"
-
+        unpack_into_data_path || exit 1
         echo "Data successfully restored from long-term archive"
-
-        # Cleanup
-        rm -rf "$BACKUP_DIR"
-        rm -f "/tmp/${GAME_NAME}_backup.tar.gz"
       else
         echo "Warning: Failed to download long-term archive from s3://$LT_BUCKET/$LT_KEY"
       fi

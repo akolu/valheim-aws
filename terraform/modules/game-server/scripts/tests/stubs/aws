@@ -1,0 +1,56 @@
+#!/bin/bash
+# Stand-in for the AWS CLI, placed first on PATH for the duration of a test.
+#
+# Every invocation is appended to $AWS_CALL_LOG, so a test can assert on the
+# arguments backup.sh/restore.sh actually passed. `s3 cp` and `s3 rm` act on a
+# fake object store under $AWS_FAKE_S3 (s3://bucket/key maps to
+# $AWS_FAKE_S3/bucket/key), which makes uploads, downloads and server-side
+# copies behave like the real thing without a network.
+#
+# `s3 ls` instead replays a fixture captured from the real CLI: its column
+# layout is precisely what the scripts parse with awk, so replaying real output
+# is the only way these tests exercise the actual contract.
+set -u
+
+printf '%s\n' "$*" >> "${AWS_CALL_LOG:?AWS_CALL_LOG is not set}"
+
+local_path() {
+  printf '%s/%s' "${AWS_FAKE_S3:?AWS_FAKE_S3 is not set}" "${1#s3://}"
+}
+
+case "${1:-} ${2:-}" in
+  "s3 ls")
+    if [[ "$*" == *--recursive* ]]; then
+      fixture="${AWS_LS_RECURSIVE_FIXTURE:-}"
+    else
+      fixture="${AWS_LS_FIXTURE:-}"
+    fi
+    if [ -z "$fixture" ]; then
+      echo "fatal error: An error occurred (NoSuchBucket) when calling the ListObjectsV2 operation: The specified bucket does not exist" >&2
+      exit 1
+    fi
+    cat "$fixture"
+    ;;
+
+  "s3 cp")
+    src="$3"
+    dst="$4"
+    [[ "$src" == s3://* ]] && src="$(local_path "$src")"
+    [[ "$dst" == s3://* ]] && dst="$(local_path "$dst")"
+    if [ ! -f "$src" ]; then
+      echo "fatal error: An error occurred (404) when calling the HeadObject operation: Key \"$3\" does not exist" >&2
+      exit 1
+    fi
+    mkdir -p "$(dirname "$dst")"
+    cp "$src" "$dst"
+    ;;
+
+  "s3 rm")
+    rm -f "$(local_path "$3")"
+    ;;
+
+  *)
+    echo "aws stub: unsupported command: $*" >&2
+    exit 64
+    ;;
+esac

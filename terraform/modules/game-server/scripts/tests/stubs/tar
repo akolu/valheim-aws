@@ -1,0 +1,18 @@
+#!/bin/bash
+# Real tar, except when a test asks it to fail. Archiving errors are otherwise
+# impossible to provoke here: they need a full disk or a disappearing source.
+if [ -n "${TAR_FAIL:-}" ]; then
+  # Leave a truncated archive behind, the way an interrupted write does — that
+  # file is the one a careless script would go on to upload.
+  prev=""
+  for arg in "$@"; do
+    case "$prev" in
+      -*f) printf 'partial archive' > "$arg"; break ;;
+    esac
+    prev="$arg"
+  done
+  echo "tar: $arg: Wrote only 4096 of 10240 bytes" >&2
+  echo "tar: Error is not recoverable: exiting now" >&2
+  exit 2
+fi
+exec /usr/bin/tar "$@"
